@@ -50,6 +50,15 @@ CONSOLE="-nographic -serial mon:stdio"
 # Additional options
 OPTIONS="-no-reboot"
 
+# Debug mode: enable GDB stub and wait for connection
+if [ -n "$QEMU_DEBUG" ]; then
+    DEBUG_OPTS="-s -S"
+    echo "  DEBUG: GDB stub enabled on port 1234"
+    echo "  DEBUG: Waiting for GDB connection before starting..."
+else
+    DEBUG_OPTS=""
+fi
+
 # Determine auto-test mode
 AUTO_TEST_FLAG=""
 if [ "${AUTO_TEST:-}" = "1" ]; then
@@ -67,6 +76,9 @@ fi
 echo "  Memory: $VM_MEMORY"
 echo "  CPUs: $SMP"
 echo "  Auto-test: ${AUTO_TEST:-0}"
+if [ -n "$QEMU_DEBUG" ]; then
+    echo "  Debug: enabled (GDB port 1234)"
+fi
 echo ""
 echo "Starting QEMU..."
 echo "=========================================="
@@ -83,7 +95,8 @@ set +e
     -append "console=ttyAMA0 root=/dev/ram0 rw=1 init=/init loglevel=8${AUTO_TEST_FLAG}" \
     $DISK_OPT \
     $CONSOLE \
-    $OPTIONS
+    $OPTIONS \
+    $DEBUG_OPTS
 
 EXIT_CODE=$?
 set -e

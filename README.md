@@ -16,6 +16,9 @@ make build-all
 # Start QEMU VM (interactive mode, runs until Ctrl+C)
 make qemu
 
+# Debug kernel with GDB (QEMU waits for GDB connection on port 1234)
+make qemu-debug
+
 # Run automated tests with timeout (for CI/testing)
 make qemu-test QEMU_TIMEOUT=15
 
@@ -28,6 +31,7 @@ make build-all qemu
 | Target | Description |
 |--------|-------------|
 | `make qemu` | Start QEMU VM interactively (runs until Ctrl+C) |
+| `make qemu-debug` | Start QEMU with GDB stub for kernel debugging |
 | `make qemu-test QEMU_TIMEOUT=15` | Run tests with 15 second timeout |
 | `make build-all` | Build swap.img and initrd.img |
 | `make build-swap` | Create swap.img (512MB, one-time) |
@@ -389,6 +393,86 @@ Or with timeout but interactive:
 ```bash
 make qemu-test QEMU_TIMEOUT=60 AUTO_TEST=0
 ```
+
+## Kernel Debugging with GDB
+
+The test environment supports kernel debugging via QEMU's GDB stub.
+
+### Quick Start
+
+Terminal 1 - Start QEMU with debug mode:
+```bash
+make qemu-debug
+```
+
+Terminal 2 - Connect with GDB:
+```bash
+cd /root/kernel
+gdb-multiarch vmlinux -ex 'target remote :1234'
+```
+
+### Debug Features
+
+- **GDB stub listens on port 1234** (`-s` flag)
+- **CPU is halted until GDB connects** (`-S` flag)
+- **Supports breakpoints, single-stepping, memory inspection**
+
+### Common GDB Commands
+
+```gdb
+# Set breakpoint at a function
+break hugetlb_swap_out
+
+# Set breakpoint at a specific file/line
+break mm/hugetlb.c:1234
+
+# Continue execution (start the kernel)
+continue
+
+# Step to next line
+step
+
+# Step to next instruction
+stepi
+
+# Print variable value
+print nr_hugepages
+
+# Backtrace
+bt
+
+# Inspect memory
+x/10x 0xffff800080000000
+
+# List source code
+list
+
+# Info about registers
+info registers
+
+# Disconnect (QEMU continues running)
+detach
+```
+
+### Requirements
+
+- Kernel must be built with debug symbols (`CONFIG_DEBUG_INFO=y`)
+- GDB with ARM64 support: `gdb-multiarch` or `aarch64-linux-gnu-gdb`
+- `vmlinux` file in kernel source directory
+
+### Troubleshooting Debug Mode
+
+**GDB cannot connect:**
+- Check QEMU is waiting: look for "Waiting for GDB connection" message
+- Verify port 1234 is not in use: `lsof -i :1234`
+
+**No source code shown:**
+- Ensure `vmlinux` has debug info: `file vmlinux` should show "not stripped"
+- Check GDB path: `show directories` in GDB
+
+**Breakpoints not working:**
+- Kernel may be relocated; use `hbreak` (hardware breakpoint) instead
+- Some code may be inlined; use function entry points
 
 ## Exiting QEMU
 

@@ -15,6 +15,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  qemu          - Start QEMU VM (runs until Ctrl+C)"
+	@echo "  qemu-debug    - Start QEMU with GDB stub for debugging"
 	@echo "  qemu-test     - Start QEMU with timeout (for CI/testing)"
 	@echo "  build-swap    - Build swap.img (one-time setup, 512MB swap space)"
 	@echo "  initrd        - Rebuild initrd.img from rootfs/"
@@ -29,6 +30,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make qemu                                      # Run interactively until Ctrl+C"
+	@echo "  make qemu-debug                                # Debug with GDB (port 1234)"
 	@echo "  make qemu-test QEMU_TIMEOUT=15                 # Auto-test with 15s timeout"
 	@echo "  make qemu-test QEMU_TIMEOUT=15 AUTO_TEST=0     # Interactive with 15s timeout"
 	@echo "  make qemu KERNEL_IMAGE=...                     # Run with custom kernel"
@@ -38,6 +40,12 @@ help:
 qemu:
 	@echo "Starting QEMU..."
 	cd $(QEMU_TEST_DIR) && ./run-qemu.sh $(KERNEL_IMAGE)
+
+# Start QEMU VM with GDB stub for debugging (waits for GDB connection on port 1234)
+qemu-debug:
+	@echo "Starting QEMU with GDB stub on port 1234..."
+	@echo "In another terminal, run: gdb-multiarch vmlinux -ex 'target remote :1234'"
+	@cd $(QEMU_TEST_DIR) && QEMU_DEBUG=1 ./run-qemu.sh $(KERNEL_IMAGE)
 
 # Start QEMU VM with timeout (auto-test mode by default, set AUTO_TEST=0 for interactive)
 qemu-test:
