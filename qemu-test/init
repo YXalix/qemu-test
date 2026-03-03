@@ -1,0 +1,126 @@
+#!/bin/sh
+# Init script for hugetlb swap testing
+
+# Mount essential filesystems
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+mount -t tmpfs none /tmp
+
+# Create necessary directories
+mkdir -p /dev/pts /dev/shm
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /dev/shm
+
+# Mount hugetlbfs
+mkdir -p /mnt/huge
+mount -t hugetlbfs none /mnt/huge
+
+# Load kernel modules
+echo "Loading kernel modules..."
+for mod in /lib/modules/*.ko; do
+    if [ -f "$mod" ]; then
+        insmod "$mod" 2>/dev/null && echo "  Loaded: $(basename $mod)" || echo "  Failed: $(basename $mod)"
+    fi
+done
+sleep 1
+
+# Set up zram swap
+echo "Setting up zram swap..."
+if [ -d /sys/block/zram0 ]; then
+    echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || echo lzo > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+    echo 536870912 > /sys/block/zram0/disksize 2>/dev/null
+    if mkswap /dev/zram0 2>/dev/null && swapon /dev/zram0 2>/dev/null; then
+        echo "  Zram swap enabled (512MB)"
+    else
+        echo 0 > /sys/block/zram0/disksize 2>/dev/null || true
+    fi
+else
+    echo "  Zram not available"
+fi
+
+# Enable ETMEM
+echo ""
+echo "Enabling ETMEM..."
+if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+    echo 1 > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null || true
+fi
+
+# Print system info
+echo ""
+echo "=========================================="
+echo "Hugetlb Swap Test Environment"
+echo "=========================================="
+echo "Kernel: $(uname -r)"
+echo "Architecture: $(uname -m)"
+echo ""
+echo "Hugetlb Information:"
+if [ -d /sys/kernel/mm/hugepages ]; then
+    for hp in /sys/kernel/mm/hugepages/hugepages-*; do
+        if [ -d "$hp" ]; then
+            name=$(basename "$hp")
+            nr=$(cat "$hp/nr_hugepages" 2>/dev/null || echo "N/A")
+            free=$(cat "$hp/free_hugepages" 2>/dev/null || echo "N/A")
+            echo "  $name: reserved=$nr, free=$free"
+        fi
+    done
+else
+    echo "  Hugepage support not available"
+fi
+
+echo ""
+echo "Swap Information:"
+cat /proc/swaps 2>/dev/null || echo "  No swap info available"
+
+echo ""
+echo "ETMEM Status:"
+if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+    cat /sys/kernel/mm/swap/kernel_swap_enable
+else
+    echo "  Not available"
+fi
+
+echo ""
+echo "Test commands: test-hugetlb, test-etmem, test-stress, hugetlb_alloc"
+echo ""
+
+# Check if running in auto-test mode (passed via kernel cmdline or env)
+if grep -q "auto_test" /proc/cmdline 2>/dev/null || [ "$AUTO_TEST" = "1" ]; then
+	echo ""
+	echo "=========================================="
+	echo "AUTO-TEST MODE: Running test suite..."
+	echo "=========================================="
+	echo ""
+
+	# Run all test scripts
+	TEST_FAILED=0
+	for test_script in /test-scripts/test-hugetlb /test-scripts/test-etmem /test-scripts/test-stress; do
+		if [ -f "$test_script" ]; then
+			echo ""
+			echo "--- Running: $(basename $test_script) ---"
+			if sh "$test_script"; then
+				echo "PASSED: $(basename $test_script)"
+			else
+				echo "FAILED: $(basename $test_script)"
+				TEST_FAILED=1
+			fi
+		fi
+	done
+
+	echo ""
+	echo "=========================================="
+	if [ $TEST_FAILED -eq 0 ]; then
+		echo "TEST_COMPLETE: ALL TESTS PASSED"
+	else
+		echo "TEST_COMPLETE: SOME TESTS FAILED"
+	fi
+	echo "=========================================="
+
+	# Power off the VM
+	echo ""
+	echo "Powering off..."
+	poweroff -f
+fi
+
+# Start shell (interactive mode)
+exec /bin/sh
