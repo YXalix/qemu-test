@@ -30,6 +30,30 @@ LOG_ERROR() {
     echo " [ERROR] $1"
 }
 
+# Mount cgroup filesystem
+mount_cgroup() {
+    LOG_INFO "Mounting cgroup filesystem..."
+
+    mkdir -p /sys/fs/cgroup
+    mount -t tmpfs none /sys/fs/cgroup
+
+    # Mount cgroup v1 with memory controller
+    mkdir -p /sys/fs/cgroup/memory
+    mount -t cgroup -o memory cgroup /sys/fs/cgroup/memory 2>/dev/null || {
+        LOG_WARN "cgroup v1 memory controller not available"
+    }
+
+    # Mount cgroup v1 with hugetlb controller (for huge page limits)
+    mkdir -p /sys/fs/cgroup/hugetlb
+    mount -t cgroup -o hugetlb cgroup /sys/fs/cgroup/hugetlb 2>/dev/null || {
+        LOG_WARN "cgroup v1 hugetlb controller not available"
+        return 1
+    }
+
+    LOG_OK "cgroup controllers mounted"
+    return 0
+}
+
 # Mount essential filesystems
 mount_filesystems() {
     LOG_INFO "Mounting filesystems..."
@@ -139,6 +163,19 @@ setup_disk_swap() {
         fi
     fi
     return 1
+}
+
+# Reserve hugepages for anonymous hugetlb testing
+reserve_hugepages() {
+    LOG_INFO "Reserving hugepages..."
+
+    # Reserve 10 x 2MB hugepages for anonymous allocation
+    local hp_2mb="/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
+    if [ -f "$hp_2mb" ]; then
+        echo 10 > "$hp_2mb" 2>/dev/null
+        local reserved=$(cat "$hp_2mb" 2>/dev/null || echo 0)
+        LOG_OK "Reserved $reserved x 2MB hugepages"
+    fi
 }
 
 # Enable ETMEM kernel swap
@@ -279,9 +316,13 @@ main() {
     # Mount filesystems
     mount_filesystems
     mount_hugetlbfs
+    mount_cgroup
 
     # Load modules
     load_modules
+
+    # Reserve hugepages for testing
+    reserve_hugepages
 
     # Setup swap
     setup_zram
@@ -305,7 +346,7 @@ main() {
     fi
 
     # Interactive mode: start shell
-    exec /bin/sh
+    setsid cttyhack /bin/sh || exec /bin/sh -l
 }
 
 # Run main

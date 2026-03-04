@@ -35,7 +35,7 @@ if [ -f "$DISK" ]; then
 fi
 
 # Memory configuration - 1GB for testing
-VM_MEMORY="2G"
+VM_MEMORY="3G"
 
 # QEMU machine type
 MACHINE="virt"

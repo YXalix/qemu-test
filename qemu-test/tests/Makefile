@@ -1,16 +1,22 @@
 # Makefile for tests
-CC := gcc
-CFLAGS := -static -O2 -Wall
+# Build output goes to build/ directory
 
-TEST_SRCS := $(wildcard *.c)
-TEST_BINS := $(patsubst %.c,%,$(TEST_SRCS))
+CC := gcc
+CFLAGS := -static -O2 -Wall -pthread
+
+BUILD_DIR := build
+TEST_SRCS := $(wildcard test-*.c)
+TEST_BINS := $(patsubst %.c,$(BUILD_DIR)/%,$(TEST_SRCS))
 
 .PHONY: all clean
 
-all: $(TEST_BINS)
+all: $(BUILD_DIR) $(TEST_BINS)
 
-%: %.c
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/%: %.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	rm -f $(TEST_BINS)
+	rm -rf $(BUILD_DIR)

@@ -2,6 +2,13 @@ qemu-test/busybox
 qemu-test/rootfs
 qemu-test/swap.img
 qemu-test/initrd.img
+
+# Test build directory
+qemu-test/tests/build/
+qemu-test/tests/.*
+qemu-test/tests/compile_commands.json
+
+# Build artifacts
 **.cmd
 **.mod
 **.o

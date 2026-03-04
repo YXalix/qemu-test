@@ -64,6 +64,10 @@ chmod +x init
 mkdir -p lib/modules
 for mod in zram etmem_scan etmem_swap; do
     ko_file="$(find ${KERNEL_DIR} -name "${mod}.ko" -print -quit 2>/dev/null)"
+    # Also check in tests directory for built module
+    if [ ! -f "$ko_file" ] && [ -f "${SCRIPT_DIR}/tests/${mod}.ko" ]; then
+        ko_file="${SCRIPT_DIR}/tests/${mod}.ko"
+    fi
     if [ -f "$ko_file" ]; then
         cp "$ko_file" lib/modules/
         echo "  Module: ${mod}.ko"
@@ -79,16 +83,16 @@ if [ -d "${SCRIPT_DIR}/tests" ]; then
     make -s 2>/dev/null || true
     cd "${ROOTFS_DIR}"
 
-    for test_src in "${SCRIPT_DIR}/tests"/*.c; do
-        if [ -f "$test_src" ]; then
-            test_bin="$(basename "$test_src" .c)"
-            if [ -f "${SCRIPT_DIR}/tests/${test_bin}" ]; then
-                cp "${SCRIPT_DIR}/tests/${test_bin}" tests/
-                chmod +x "tests/${test_bin}"
-                echo "  Test: ${test_bin}"
+    # Copy from build directory
+    if [ -d "${SCRIPT_DIR}/tests/build" ]; then
+        for test_bin in "${SCRIPT_DIR}/tests/build"/*; do
+            if [ -f "$test_bin" ] && [ -x "$test_bin" ]; then
+                cp "$test_bin" tests/
+                chmod +x "tests/$(basename "$test_bin")"
+                echo "  Test: $(basename "$test_bin")"
             fi
-        fi
-    done
+        done
+    fi
 fi
 
 # Build initrd
