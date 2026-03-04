@@ -88,15 +88,15 @@ initrd:
 	@# Copy init script from source
 	@cp $(QEMU_TEST_DIR)/init $(QEMU_TEST_DIR)/rootfs/init
 	@chmod +x $(QEMU_TEST_DIR)/rootfs/init
-	@# Copy test scripts from source
-	@mkdir -p $(QEMU_TEST_DIR)/rootfs/test-scripts
-	@cp $(QEMU_TEST_DIR)/test-scripts/* $(QEMU_TEST_DIR)/rootfs/test-scripts/ 2>/dev/null || true
-	@chmod +x $(QEMU_TEST_DIR)/rootfs/test-scripts/*
-	@# Create symlinks in bin/ for test scripts
-	@for script in $(QEMU_TEST_DIR)/rootfs/test-scripts/*; do \
-		if [ -f "$$script" ]; then \
-			name=$$(basename "$$script"); \
-			ln -sf ../test-scripts/$$name $(QEMU_TEST_DIR)/rootfs/bin/$$name 2>/dev/null || true; \
+	@# Copy tests from source
+	@mkdir -p $(QEMU_TEST_DIR)/rootfs/tests
+	@cp $(QEMU_TEST_DIR)/tests/* $(QEMU_TEST_DIR)/rootfs/tests/ 2>/dev/null || true
+	@chmod +x $(QEMU_TEST_DIR)/rootfs/tests/*
+	@# Create symlinks in bin/ for tests
+	@for test in $(QEMU_TEST_DIR)/rootfs/tests/*; do \
+		if [ -f "$$test" ]; then \
+			name=$$(basename "$$test"); \
+			ln -sf ../tests/$$name $(QEMU_TEST_DIR)/rootfs/bin/$$name 2>/dev/null || true; \
 		fi; \
 	done
 	@echo "Rebuilding initrd.img from rootfs/..."

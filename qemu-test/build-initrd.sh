@@ -107,20 +107,20 @@ fi
 # Copy test scripts
 echo ""
 echo "Copying test scripts..."
-mkdir -p test-scripts
-for script in "${SCRIPT_DIR}/test-scripts"/test-*; do
+mkdir -p tests
+for script in "${SCRIPT_DIR}/tests"/test-*; do
     if [ -f "$script" ]; then
-        cp "$script" test-scripts/
-        chmod +x "test-scripts/$(basename $script)"
+        cp "$script" tests/
+        chmod +x "tests/$(basename $script)"
         echo "  $(basename $script)"
     fi
 done
 
 # Create symlinks in bin for easy access
 cd bin
-for script in ../test-scripts/test-*; do
+for script in ../tests/test-*; do
     if [ -f "$script" ]; then
-        ln -sf "../test-scripts/$(basename $script)" "$(basename $script)"
+        ln -sf "../tests/$(basename $script)" "$(basename $script)"
     fi
 done
 cd ..

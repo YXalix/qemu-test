@@ -6,15 +6,22 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 mount -t tmpfs none /tmp
+mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
 
 # Create necessary directories
 mkdir -p /dev/pts /dev/shm
 mount -t devpts devpts /dev/pts
 mount -t tmpfs tmpfs /dev/shm
 
-# Mount hugetlbfs
+# Mount hugetlbfs with explicit pagesize for 2MB hugepages
 mkdir -p /mnt/huge
-mount -t hugetlbfs none /mnt/huge
+if mount -t hugetlbfs -o pagesize=2M none /mnt/huge 2>/dev/null; then
+    echo "  Hugetlbfs mounted at /mnt/huge (2MB)"
+elif mount -t hugetlbfs none /mnt/huge 2>/dev/null; then
+    echo "  Hugetlbfs mounted at /mnt/huge (default)"
+else
+    echo "  Failed to mount hugetlbfs"
+fi
 
 # Load kernel modules
 echo "Loading kernel modules..."
@@ -25,18 +32,40 @@ for mod in /lib/modules/*.ko; do
 done
 sleep 1
 
-# Set up zram swap
+# Initialize and set up zram swap
 echo "Setting up zram swap..."
-if [ -d /sys/block/zram0 ]; then
+if [ -f /sys/class/zram-control/hot_add ]; then
+    # Modern zram interface
+    ZRAM_DEV=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
+    if [ -n "$ZRAM_DEV" ]; then
+        echo lz4 > /sys/block/zram${ZRAM_DEV}/comp_algorithm 2>/dev/null || echo lzo > /sys/block/zram${ZRAM_DEV}/comp_algorithm 2>/dev/null || true
+        echo 536870912 > /sys/block/zram${ZRAM_DEV}/disksize 2>/dev/null
+        if mkswap /dev/zram${ZRAM_DEV} 2>/dev/null && swapon /dev/zram${ZRAM_DEV} 2>/dev/null; then
+            echo "  Zram swap enabled (512MB) on zram${ZRAM_DEV}"
+        else
+            echo "  Failed to setup zram${ZRAM_DEV}"
+        fi
+    fi
+elif [ -d /sys/block/zram0 ]; then
+    # Legacy zram interface - zram0 already exists
     echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || echo lzo > /sys/block/zram0/comp_algorithm 2>/dev/null || true
     echo 536870912 > /sys/block/zram0/disksize 2>/dev/null
     if mkswap /dev/zram0 2>/dev/null && swapon /dev/zram0 2>/dev/null; then
         echo "  Zram swap enabled (512MB)"
     else
         echo 0 > /sys/block/zram0/disksize 2>/dev/null || true
+        echo "  Failed to setup zram0"
     fi
 else
     echo "  Zram not available"
+fi
+
+# Also try disk-based swap if available
+if [ -b /dev/vda ]; then
+    echo "Checking for disk swap..."
+    if mkswap /dev/vda 2>/dev/null && swapon /dev/vda 2>/dev/null; then
+        echo "  Disk swap enabled"
+    fi
 fi
 
 # Enable ETMEM
@@ -84,6 +113,18 @@ echo ""
 echo "Test commands: test-hugetlb, test-etmem, test-stress, hugetlb_alloc"
 echo ""
 
+# Wait a moment for everything to settle
+echo "Waiting for system to settle..."
+sleep 3
+
+# Verify swap is ready
+if [ -s /proc/swaps ]; then
+    echo "Swap is ready:"
+    swapon -s | head -2
+else
+    echo "WARNING: Swap not configured"
+fi
+
 # Check if running in auto-test mode (passed via kernel cmdline or env)
 if grep -q "auto_test" /proc/cmdline 2>/dev/null || [ "$AUTO_TEST" = "1" ]; then
 	echo ""
@@ -94,7 +135,7 @@ if grep -q "auto_test" /proc/cmdline 2>/dev/null || [ "$AUTO_TEST" = "1" ]; then
 
 	# Run all test scripts
 	TEST_FAILED=0
-	for test_script in /test-scripts/test-hugetlb /test-scripts/test-etmem /test-scripts/test-stress; do
+	for test_script in /tests/test-hugetlb /tests/test-etmem /tests/test-stress /tests/test-hugetlb-swap; do
 		if [ -f "$test_script" ]; then
 			echo ""
 			echo "--- Running: $(basename $test_script) ---"

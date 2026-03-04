@@ -1,0 +1,252 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Memory Pressure and Hugetlb Swap Stress Test
+
+echo "=== Hugetlb Swap Memory Pressure Test ==="
+echo ""
+
+# Check prerequisites
+check_prereqs() {
+    echo "Prerequisites check:"
+
+    # Check for swap (partition, file, or zram)
+    if free | grep -q Swap && [ "$(free | awk '/Swap:/{print $2}')" -gt 0 ]; then
+        echo "  PASS: Swap is configured"
+        free -h | grep Swap
+    elif [ -s /proc/swaps ] && grep -qE "partition|file|/dev/zram" /proc/swaps 2>/dev/null; then
+        echo "  PASS: Swap is configured"
+        swapon -s | head -2
+    else
+        echo "  FAIL: No swap configured"
+        return 1
+    fi
+
+    # Check for hugetlb support
+    if [ -d /sys/kernel/mm/hugepages/hugepages-2048kB ]; then
+        echo "  PASS: 2MB hugepages supported"
+    else
+        echo "  FAIL: 2MB hugepages not supported"
+        return 1
+    fi
+
+    # Check for kernel_swap_enable
+    if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+        echo "  PASS: kernel_swap_enable available"
+        echo "  Current: $(cat /sys/kernel/mm/swap/kernel_swap_enable)"
+    else
+        echo "  WARN: kernel_swap_enable not available"
+    fi
+    echo ""
+    return 0
+}
+
+# Test 1: Basic hugepage allocation and release
+test_basic_hugetlb() {
+    echo "Test 1: Basic Hugetlb Allocation"
+
+    local hp_path="/sys/kernel/mm/hugepages/hugepages-2048kB"
+    local orig_nr=$(cat "$hp_path/nr_hugepages")
+
+    # Reserve 5 hugepages
+    echo 5 > "$hp_path/nr_hugepages" 2>/dev/null
+    sleep 0.5
+    local actual=$(cat "$hp_path/nr_hugepages")
+
+    if [ "$actual" -ge 5 ]; then
+        echo "  PASS: Reserved $actual hugepages"
+    else
+        echo "  WARN: Only reserved $actual hugepages"
+    fi
+
+    # Check free hugepages
+    local free=$(cat "$hp_path/free_hugepages")
+    echo "  Free hugepages: $free"
+
+    # Restore
+    echo "$orig_nr" > "$hp_path/nr_hugepages" 2>/dev/null
+    echo ""
+}
+
+# Test 2: Hugetlbfs allocation test
+test_hugetlbfs() {
+    echo "Test 2: Hugetlbfs Allocation"
+
+    if [ ! -d /mnt/huge ]; then
+        echo "  SKIP: /mnt/huge not available"
+        echo ""
+        return
+    fi
+
+    if ! mount | grep -q "hugetlbfs.*mnt/huge"; then
+        echo "  SKIP: hugetlbfs not mounted"
+        echo ""
+        return
+    fi
+
+    local hp_path="/sys/kernel/mm/hugepages/hugepages-2048kB"
+    local orig_nr=$(cat "$hp_path/nr_hugepages")
+
+    # Reserve hugepages
+    echo 5 > "$hp_path/nr_hugepages" 2>/dev/null
+    sleep 0.5
+
+    # Allocate through hugetlbfs
+    if dd if=/dev/zero of=/mnt/huge/stress_test bs=2M count=3 2>/dev/null; then
+        echo "  PASS: Allocated 3 hugepages via hugetlbfs"
+    else
+        echo "  FAIL: Could not allocate via hugetlbfs"
+    fi
+
+    rm -f /mnt/huge/stress_test
+    echo "$orig_nr" > "$hp_path/nr_hugepages" 2>/dev/null
+    echo ""
+}
+
+# Test 3: Memory pressure with hugepages
+test_pressure_with_hugetlb() {
+    echo "Test 3: Memory Pressure with Hugetlb"
+
+    local hp_path="/sys/kernel/mm/hugepages/hugepages-2048kB"
+    local orig_nr=$(cat "$hp_path/nr_hugepages")
+
+    # Reserve some hugepages
+    echo 5 > "$hp_path/nr_hugepages" 2>/dev/null
+    sleep 0.5
+
+    echo "  Memory before pressure:"
+    free -h | grep -E "(Mem|Swap:)" | head -2
+
+    # Create memory pressure
+    echo "  Creating memory pressure..."
+    for i in $(seq 1 5); do
+        dd if=/dev/zero of=/tmp/stress_$i bs=1M count=100 2>/dev/null
+        sleep 0.2
+    done
+
+    echo "  Memory during pressure:"
+    free -h | grep -E "(Mem|Swap:)" | head -2
+
+    # Cleanup pressure files
+    rm -f /tmp/stress_*
+
+    # Allow system to settle
+    sleep 1
+
+    echo "  Memory after cleanup:"
+    free -h | grep -E "(Mem|Swap:)" | head -2
+
+    # Check hugepages still available
+    local current=$(cat "$hp_path/nr_hugepages")
+    echo "  Hugepages after test: $current"
+
+    # Restore
+    echo "$orig_nr" > "$hp_path/nr_hugepages" 2>/dev/null
+    echo ""
+}
+
+# Test 4: ETMEM-triggered swap test (if available)
+test_etmem_swap() {
+    echo "Test 4: ETMEM Hugetlb Swap"
+
+    if [ ! -f /proc/etmem ]; then
+        echo "  SKIP: /proc/etmem not available"
+        echo ""
+        return
+    fi
+
+    # Enable kernel swap if available
+    if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+        echo "true" > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null
+        echo "  Enabled kernel_swap"
+    fi
+
+    local hp_path="/sys/kernel/mm/hugepages/hugepages-2048kB"
+    local orig_nr=$(cat "$hp_path/nr_hugepages")
+
+    # Reserve hugepages
+    echo 3 > "$hp_path/nr_hugepages" 2>/dev/null
+    sleep 0.5
+
+    echo "  Hugepages reserved: $(cat "$hp_path/nr_hugepages")"
+    echo "  Free hugepages: $(cat "$hp_path/free_hugepages")"
+
+    # Note: Actual ETMEM swap test would require
+    # - A process with hugetlb mappings
+    # - Writing vaddrs to /proc/etmem
+    # This is a basic smoke test
+
+    echo "  INFO: ETMEM interface present at /proc/etmem"
+    echo "  Full ETMEM test requires process with hugetlb mappings"
+
+    # Restore
+    echo "$orig_nr" > "$hp_path/nr_hugepages" 2>/dev/null
+    echo ""
+}
+
+# Test 5: Swap activity check
+test_swap_activity() {
+    echo "Test 5: Swap Activity"
+
+    # Read swap stats before
+    local swap_in_before=$(grep "pswpin" /proc/vmstat | awk '{print $2}')
+    local swap_out_before=$(grep "pswpout" /proc/vmstat | awk '{print $2}')
+
+    echo "  Swap in before:  $swap_in_before pages"
+    echo "  Swap out before: $swap_out_before pages"
+
+    # Create some memory pressure to trigger swap
+    echo "  Creating memory pressure..."
+    for i in $(seq 1 3); do
+        dd if=/dev/zero of=/tmp/swapstress_$i bs=1M count=150 2>/dev/null
+    done
+
+    sleep 2
+
+    # Read swap stats after
+    local swap_in_after=$(grep "pswpin" /proc/vmstat | awk '{print $2}')
+    local swap_out_after=$(grep "pswpout" /proc/vmstat | awk '{print $2}')
+
+    echo "  Swap in after:   $swap_in_after pages"
+    echo "  Swap out after:  $swap_out_after pages"
+
+    # Cleanup
+    rm -f /tmp/swapstress_*
+
+    local swap_in_diff=$((swap_in_after - swap_in_before))
+    local swap_out_diff=$((swap_out_after - swap_out_before))
+
+    echo "  Swap in during test:  $swap_in_diff pages"
+    echo "  Swap out during test: $swap_out_diff pages"
+
+    if [ "$swap_out_diff" -gt 0 ]; then
+        echo "  PASS: Swap activity detected"
+    else
+        echo "  INFO: No swap activity (may need more memory pressure)"
+    fi
+    echo ""
+}
+
+# Main test runner
+main() {
+    if ! check_prereqs; then
+        echo "Prerequisites not met. Some tests will be skipped."
+        echo ""
+    fi
+
+    test_basic_hugetlb
+    test_hugetlbfs
+    test_pressure_with_hugetlb
+    test_etmem_swap
+    test_swap_activity
+
+    echo "=== Stress Tests Complete ==="
+    echo ""
+    echo "Final system state:"
+    echo "Memory:"
+    free -h | grep -E "(Mem|Swap:)" | head -2
+    echo ""
+    echo "Hugepages:"
+    cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo "  Not available"
+}
+
+main

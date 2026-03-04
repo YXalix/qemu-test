@@ -2,3 +2,8 @@ qemu-test/busybox
 qemu-test/rootfs
 qemu-test/swap.img
 qemu-test/initrd.img
+**.cmd
+**.mod
+**.o
+**.ko
+**.order

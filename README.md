@@ -1,7 +1,6 @@
 # QEMU Hugetlb Swap Test Environment
 
-This directory contains a complete QEMU-based test environment for testing
-the Hugetlb Swap feature on Linux 6.6 ARM64.
+This directory contains a complete QEMU-based test environment with **both KUnit (in-kernel) and E2E tests** for the Hugetlb Swap feature on Linux 6.6 ARM64.
 
 ## Quick Start
 
@@ -55,16 +54,25 @@ This will boot a minimal BusyBox-based VM with the compiled kernel.
 
 ### Build initrd from Scratch
 
+**Prerequisite**: Build kernel modules first, only if the kernel was built without modules:
+
 ```bash
-cd /root/kernel/testing/qemu-test
-./build-initrd.sh
+cd /root/kernel
+make modules -j$(nproc)
+```
+
+Then build the initrd:
+
+```bash
+cd /root/kernel/testing/
+make initrd
 ```
 
 This script:
 1. Downloads and builds BusyBox (statically linked)
 2. Creates the rootfs directory structure
-3. Copies kernel modules (zram, etmem)
-4. Copies test scripts (test-hugetlb, test-etmem, test-stress) from test-scripts/
+3. Copies kernel modules (zram.ko, etmem_scan.ko, etmem_swap.ko)
+4. Copies test programs (test-hugetlb, test-etmem, test-stress, test-hugetlb-swap) from tests/
 5. Copies init script
 6. Compiles the C test program (if source available)
 7. Builds the compressed initrd.img
@@ -73,27 +81,29 @@ This script:
 
 ```
 testing/
-├── Makefile             # Quick start commands
+├── Makefile                 # Quick start commands
+├── Kconfig                  # Kernel config for tests
 └── qemu-test/
     ├── run-qemu.sh          # QEMU launch script
     ├── build-initrd.sh      # Build initrd from scratch
     ├── init                   # VM init script (source)
-    ├── test-scripts/          # Test scripts (source)
-    │   ├── test-hugetlb       # Shell script for basic test
-    │   ├── test-etmem         # Shell script for ETMEM test
-    │   └── test-stress        # Shell script for memory pressure test
+    ├── tests/                 # Test programs (source)
+    │   ├── test-hugetlb       # Basic hugetlb tests
+    │   ├── test-etmem         # ETMEM interface tests
+    │   ├── test-stress        # Memory pressure tests
+    │   └── test-hugetlb-swap  # Comprehensive E2E tests
     ├── initrd.img             # Compressed initramfs (output)
     ├── swap.img               # Swap disk image (512MB, created once)
-    ├── hugetlb_swap_test.c    # C test program source
+    ├── hugetlb_swap_test.c    # (legacy - KUnit tests now in mm/)
     ├── rootfs/                # Root filesystem (build artifact)
     │   ├── init               # Copied from ../init
     │   ├── bin/
     │   │   ├── busybox        # BusyBox binary
-    │   │   ├── test-hugetlb   # Symlink to ../test-scripts/test-hugetlb
-    │   │   ├── test-etmem     # Symlink to ../test-scripts/test-etmem
-    │   │   ├── test-stress    # Symlink to ../test-scripts/test-stress
+    │   │   ├── test-hugetlb   # Symlink to ../tests/test-hugetlb
+    │   │   ├── test-etmem     # Symlink to ../tests/test-etmem
+    │   │   ├── test-stress    # Symlink to ../tests/test-stress
     │   │   └── hugetlb_alloc  # Compiled C test program
-    │   └── test-scripts/      # Copied from ../test-scripts/
+    │   └── tests/             # Copied from ../tests/
     └── busybox/               # BusyBox build directory
         └── busybox-1.36.1/
 ```
@@ -138,9 +148,9 @@ bin/busybox --install -s bin/
 #### 3. Add Custom Files
 
 - **`init`** - The init script (copied from `../init`) that mounts filesystems, sets up swap, and starts the shell
-- **`test-scripts/test-hugetlb`** - Shell script for basic hugepage testing
-- **`test-scripts/test-etmem`** - Shell script for ETMEM interface testing
-- **`test-scripts/test-stress`** - Shell script for memory pressure testing
+- **`tests/test-hugetlb`** - Shell script for basic hugepage testing
+- **`tests/test-etmem`** - Shell script for ETMEM interface testing
+- **`tests/test-stress`** - Shell script for memory pressure testing
 - **`bin/hugetlb_alloc`** - Compiled C test program (statically linked)
 
 #### 4. Create the init Script
@@ -216,56 +226,6 @@ fi
 
 ---
 
-### Creating the C Test Program
-
-The `hugetlb_alloc` binary is a statically linked C program:
-
-```bash
-# Compiled automatically by build-initrd.sh
-cd /root/kernel/testing/qemu-test
-./build-initrd.sh
-```
-
-Or manually:
-```bash
-gcc -static -O2 -o /root/kernel/testing/qemu-test/rootfs/bin/hugetlb_alloc \
-    /root/kernel/testing/qemu-test/hugetlb_swap_test.c
-```
-
-Static linking ensures all dependencies are included, making the binary work in the minimal BusyBox environment without shared libraries.
-
-## Test Commands
-
-Once inside the QEMU VM, the following test commands are available:
-
-### 1. Basic Hugetlb Test
-```bash
-test-hugetlb
-```
-Tests basic huge page allocation via hugetlbfs.
-
-### 2. ETMEM Interface Test
-```bash
-test-etmem
-```
-Checks ETMEM interface availability and basic functionality.
-
-### 3. Memory Pressure Test
-```bash
-test-stress
-```
-Creates memory pressure to potentially trigger swapping.
-
-### 4. Comprehensive C Test
-```bash
-hugetlb_alloc
-```
-Runs a comprehensive test suite including:
-- Basic hugetlb allocation
-- MAP_HUGETLB mmap test
-- ETMEM interface check
-- Swap status reporting
-- Memory pressure test
 
 ## Manual Testing
 
@@ -300,14 +260,14 @@ cat /proc/meminfo | grep -E "(Huge|Swap)"
 ## Rebuilding
 
 ### Edit and Rebuild
-The `init` script and `test-scripts/` are source files outside `rootfs/`. To modify and test:
+The `init` script and `tests/` are source files outside `rootfs/`. To modify and test:
 
 ```bash
 cd /root/kernel/testing/qemu-test
 
 # 1. Edit init or test scripts
 vim init                    # Edit VM init script
-vim test-scripts/test-hugetlb  # Edit test script
+vim tests/test-hugetlb  # Edit test script
 
 # 2. Rebuild initrd
 ./build-initrd.sh
@@ -375,7 +335,7 @@ ls -la /root/kernel/arch/arm64/boot/Image*
 
 When running `make qemu-test QEMU_TIMEOUT=15`, the VM will:
 1. Boot with `auto_test` flag in kernel command line
-2. Automatically run all test scripts in `/test-scripts/`
+2. Automatically run all test programs in `/tests/`
 3. Display results (PASSED/FAILED for each test)
 4. Power off the VM
 
@@ -411,69 +371,6 @@ cd /root/kernel
 gdb-multiarch vmlinux -ex 'target remote :1234'
 ```
 
-### Debug Features
-
-- **GDB stub listens on port 1234** (`-s` flag)
-- **CPU is halted until GDB connects** (`-S` flag)
-- **Supports breakpoints, single-stepping, memory inspection**
-
-### Common GDB Commands
-
-```gdb
-# Set breakpoint at a function
-break hugetlb_swap_out
-
-# Set breakpoint at a specific file/line
-break mm/hugetlb.c:1234
-
-# Continue execution (start the kernel)
-continue
-
-# Step to next line
-step
-
-# Step to next instruction
-stepi
-
-# Print variable value
-print nr_hugepages
-
-# Backtrace
-bt
-
-# Inspect memory
-x/10x 0xffff800080000000
-
-# List source code
-list
-
-# Info about registers
-info registers
-
-# Disconnect (QEMU continues running)
-detach
-```
-
-### Requirements
-
-- Kernel must be built with debug symbols (`CONFIG_DEBUG_INFO=y`)
-- GDB with ARM64 support: `gdb-multiarch` or `aarch64-linux-gnu-gdb`
-- `vmlinux` file in kernel source directory
-
-### Troubleshooting Debug Mode
-
-**GDB cannot connect:**
-- Check QEMU is waiting: look for "Waiting for GDB connection" message
-- Verify port 1234 is not in use: `lsof -i :1234`
-
-**No source code shown:**
-- Ensure `vmlinux` has debug info: `file vmlinux` should show "not stripped"
-- Check GDB path: `show directories` in GDB
-
-**Breakpoints not working:**
-- Kernel may be relocated; use `hbreak` (hardware breakpoint) instead
-- Some code may be inlined; use function entry points
-
 ## Exiting QEMU
 
 ### Interactive Mode (`make qemu`)
@@ -491,10 +388,3 @@ The VM powers off automatically after tests complete. The Makefile will:
 - Print "SUCCESS: QEMU test completed" if all tests pass
 - Print "ERROR: QEMU timed out" if timeout is exceeded
 - Exit with non-zero code on failure
-
-## Notes
-
-- The test environment uses a static BusyBox binary for minimal dependencies
-- The C test program is statically linked to avoid library issues
-- Swap is provided via a 512MB swap file in tmpfs
-- Hugetlbfs is mounted at /mnt/huge

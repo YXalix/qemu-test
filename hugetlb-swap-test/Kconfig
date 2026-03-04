@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0
+# Kconfig for Hugetlb Swap KUnit tests
+
+config HUGETLB_SWAP_KUNIT_TEST
+	tristate "Hugetlb Swap KUnit tests"
+	depends on KUNIT && HUGETLB_SWAP
+	default n
+	help
+	  This option enables KUnit tests for the Hugetlb Swap feature.
+
+	  These tests verify the correctness of:
+	  - Swap slot allocation for huge pages
+	  - Hugetlb page isolation
+	  - Swap cache operations
+	  - Reclaim integration
+
+	  The tests are built as a loadable kernel module that can be
+	  loaded on demand for testing.
+
+	  If unsure, say N.
+
+config HUGETLB_SWAP_KUNIT_TEST_TIMEOUT
+	int "Test timeout in seconds"
+	depends on HUGETLB_SWAP_KUNIT_TEST
+	default 30
+	range 1 300
+	help
+	  Timeout for individual test cases in seconds.
+	  Increase this if running on slow hardware or under heavy load.
+
+config HUGETLB_SWAP_KUNIT_TEST_VERBOSE
+	bool "Verbose test output"
+	depends on HUGETLB_SWAP_KUNIT_TEST
+	default n
+	help
+	  Enable verbose output for test debugging.
+	  This will print additional information during test execution.

@@ -19,7 +19,8 @@ echo "Current count:"
 cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
 echo ""
 echo "Testing hugetlbfs allocation..."
-dd if=/dev/zero of=/mnt/huge/testfile bs=2M count=5 2>/dev/null && echo "Success!" || echo "Failed"
+# Use exact hugepage size (2097152 = 2MB) for hugetlbfs
+dd if=/dev/zero of=/mnt/huge/testfile bs=2097152 count=5 2>/dev/null && echo "Success!" || echo "Failed"
 rm -f /mnt/huge/testfile
 echo ""
 echo "Freeing hugepages..."

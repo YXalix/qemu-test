@@ -1,0 +1,216 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# ETMEM E2E Tests for Hugetlb Swap Support
+
+echo "=== ETMEM Hugetlb Swap E2E Tests ==="
+echo ""
+
+# Test 1: Check ETMEM interface exists
+test_etmem_interface() {
+    echo "Test 1: ETMEM Interface Availability"
+    if [ -f /proc/etmem ]; then
+        echo "  PASS: /proc/etmem exists"
+    else
+        echo "  FAIL: /proc/etmem not found"
+        return 1
+    fi
+
+    if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+        echo "  PASS: /sys/kernel/mm/swap/kernel_swap_enable exists"
+        echo "  Current value: $(cat /sys/kernel/mm/swap/kernel_swap_enable)"
+    else
+        echo "  INFO: kernel_swap_enable sysfs not available"
+    fi
+    echo ""
+}
+
+# Test 2: Check kernel swap enable functionality
+test_kernel_swap_enable() {
+    echo "Test 2: Kernel Swap Enable Control"
+
+    if [ ! -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
+        echo "  SKIP: kernel_swap_enable not available"
+        echo ""
+        return 0
+    fi
+
+    # Save original value
+    orig=$(cat /sys/kernel/mm/swap/kernel_swap_enable)
+
+    # Test disabling
+    echo "false" > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null
+    if [ "$(cat /sys/kernel/mm/swap/kernel_swap_enable)" = "false" ]; then
+        echo "  PASS: Can disable kernel swap"
+    else
+        echo "  FAIL: Cannot disable kernel swap"
+    fi
+
+    # Test enabling
+    echo "true" > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null
+    if [ "$(cat /sys/kernel/mm/swap/kernel_swap_enable)" = "true" ]; then
+        echo "  PASS: Can enable kernel swap"
+    else
+        echo "  FAIL: Cannot enable kernel swap"
+    fi
+
+    # Restore original
+    echo "$orig" > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null
+    echo ""
+}
+
+# Test 3: Check swap is configured
+test_swap_configured() {
+    echo "Test 3: Swap Configuration"
+    if [ -s /proc/swaps ] && grep -q "partition\|file" /proc/swaps 2>/dev/null; then
+        echo "  PASS: Swap is configured"
+        cat /proc/swaps | grep -v "^Filename" | head -3
+    else
+        echo "  WARN: No swap configured - hugetlb swap tests will be limited"
+    fi
+    echo ""
+}
+
+# Test 4: Check hugetlb support
+test_hugetlb_support() {
+    echo "Test 4: Hugetlb Support"
+    if [ -d /sys/kernel/mm/hugepages ]; then
+        echo "  PASS: Hugetlb support available"
+        echo "  Hugepage sizes:"
+        for hp in /sys/kernel/mm/hugepages/hugepages-*; do
+            if [ -d "$hp" ]; then
+                name=$(basename "$hp")
+                nr=$(cat "$hp/nr_hugepages" 2>/dev/null || echo "N/A")
+                echo "    $name: $nr"
+            fi
+        done
+    else
+        echo "  FAIL: Hugetlb support not available"
+    fi
+    echo ""
+}
+
+# Test 5: Reserve and check hugepages
+test_reserve_hugepages() {
+    echo "Test 5: Reserve Hugepages"
+
+    # Find available hugepage size
+    hp_size=""
+    for hp in /sys/kernel/mm/hugepages/hugepages-2048kB /sys/kernel/mm/hugepages/hugepages-1048576kB; do
+        if [ -d "$hp" ]; then
+            hp_size=$hp
+            break
+        fi
+    done
+
+    if [ -z "$hp_size" ]; then
+        echo "  SKIP: No hugepage support"
+        echo ""
+        return 0
+    fi
+
+    hp_name=$(basename "$hp_size")
+
+    # Save original count
+    orig_nr=$(cat "$hp_size/nr_hugepages")
+
+    # Reserve 5 hugepages
+    echo 5 > "$hp_size/nr_hugepages" 2>/dev/null
+    new_nr=$(cat "$hp_size/nr_hugepages")
+
+    if [ "$new_nr" -ge 5 ]; then
+        echo "  PASS: Reserved $new_nr hugepages ($hp_name)"
+    else
+        echo "  WARN: Only reserved $new_nr hugepages (requested 5)"
+    fi
+
+    # Cleanup
+    echo "$orig_nr" > "$hp_size/nr_hugepages" 2>/dev/null
+    echo ""
+}
+
+# Test 6: Test ETMEM etmem_reclaim sysctl (if available)
+test_etmem_reclaim() {
+    echo "Test 6: ETMEM Reclaim Setting"
+    if [ -f /proc/sys/vm/etmem_reclaim ]; then
+        val=$(cat /proc/sys/vm/etmem_reclaim)
+        echo "  Current etmem_reclaim: $val"
+
+        # Try setting to 1 (enable)
+        echo 1 > /proc/sys/vm/etmem_reclaim 2>/dev/null
+        if [ "$(cat /proc/sys/vm/etmem_reclaim)" = "1" ]; then
+            echo "  PASS: Can enable etmem reclaim"
+        else
+            echo "  INFO: Cannot modify etmem_reclaim (may require privileges)"
+        fi
+
+        # Restore
+        echo "$val" > /proc/sys/vm/etmem_reclaim 2>/dev/null
+    else
+        echo "  SKIP: /proc/sys/vm/etmem_reclaim not available"
+    fi
+    echo ""
+}
+
+# Test 7: Check hugetlb swap module loading
+test_hugetlb_swap_module() {
+    echo "Test 7: Hugetlb Swap Module"
+
+    # Check if hugetlb swap test module is loaded
+    if lsmod 2>/dev/null | grep -q "hugetlb_swap_test"; then
+        echo "  PASS: hugetlb_swap_test module loaded"
+    else
+        echo "  INFO: hugetlb_swap_test module not loaded"
+    fi
+
+    # Check for CONFIG_HUGETLB_SWAP in kernel config
+    if [ -f /proc/config.gz ]; then
+        if zcat /proc/config.gz 2>/dev/null | grep -q "CONFIG_HUGETLB_SWAP=y"; then
+            echo "  PASS: CONFIG_HUGETLB_SWAP enabled in kernel"
+        elif zcat /proc/config.gz 2>/dev/null | grep -q "CONFIG_HUGETLB_SWAP=m"; then
+            echo "  PASS: CONFIG_HUGETLB_SWAP available as module"
+        else
+            echo "  WARN: CONFIG_HUGETLB_SWAP not found in kernel config"
+        fi
+    elif [ -f /boot/config-$(uname -r) ]; then
+        if grep -q "CONFIG_HUGETLB_SWAP" /boot/config-$(uname -r) 2>/dev/null; then
+            echo "  INFO: CONFIG_HUGETLB_SWAP found in /boot/config"
+        else
+            echo "  WARN: CONFIG_HUGETLB_SWAP not found in /boot/config"
+        fi
+    else
+        echo "  INFO: Kernel config not accessible"
+    fi
+    echo ""
+}
+
+# Test 8: Hugetlbfs mount test
+test_hugetlbfs() {
+    echo "Test 8: Hugetlbfs"
+    if [ -d /mnt/huge ]; then
+        echo "  PASS: /mnt/huge directory exists"
+        if mount | grep -q "hugetlbfs.*mnt/huge"; then
+            echo "  PASS: hugetlbfs mounted at /mnt/huge"
+        else
+            echo "  INFO: hugetlbfs not mounted at /mnt/huge"
+        fi
+    else
+        echo "  INFO: /mnt/huge directory not present"
+    fi
+    echo ""
+}
+
+# Run all tests
+main() {
+    test_etmem_interface
+    test_kernel_swap_enable
+    test_swap_configured
+    test_hugetlb_support
+    test_reserve_hugepages
+    test_etmem_reclaim
+    test_hugetlb_swap_module
+    test_hugetlbfs
+
+    echo "=== ETMEM Tests Complete ==="
+}
+
+main
