@@ -182,10 +182,10 @@ print_status() {
     # Swap info
     echo ""
     echo "Swap Information:"
-    if [ -s /proc/swaps ]; then
-        cat /proc/swaps | tail -n +2 | while read line; do
-            echo "  $line"
-        done
+    # Check if swap exists (skip header line)
+    swap_lines=$(grep -c "^/dev" /proc/swaps 2>/dev/null || echo 0)
+    if [ "$swap_lines" -gt 0 ]; then
+        sed 's/^/  /' /proc/swaps | tail -n +2
     else
         echo "  No swap configured"
     fi
@@ -211,7 +211,7 @@ wait_for_system() {
     LOG_INFO "Waiting for system to settle..."
     sleep 2
 
-    if [ -s /proc/swaps ]; then
+    if grep -q "^/dev" /proc/swaps 2>/dev/null; then
         LOG_OK "Swap is ready"
     else
         LOG_WARN "Swap not configured"

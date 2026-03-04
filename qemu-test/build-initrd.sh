@@ -63,7 +63,7 @@ chmod +x init
 # Copy kernel modules
 mkdir -p lib/modules
 for mod in zram etmem_scan etmem_swap; do
-    ko_file="${KERNEL_DIR}/$(find ${KERNEL_DIR} -name "${mod}.ko" -print -quit 2>/dev/null)"
+    ko_file="$(find ${KERNEL_DIR} -name "${mod}.ko" -print -quit 2>/dev/null)"
     if [ -f "$ko_file" ]; then
         cp "$ko_file" lib/modules/
         echo "  Module: ${mod}.ko"
