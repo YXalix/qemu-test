@@ -8,7 +8,17 @@ ROOTFS_DIR="${SCRIPT_DIR}/rootfs"
 INITRD_FILE="${SCRIPT_DIR}/initrd.img"
 BUSYBOX_VERSION="1.36.1"
 BUSYBOX_DIR="${SCRIPT_DIR}/busybox/busybox-${BUSYBOX_VERSION}"
-KERNEL_DIR="${KERNEL_DIR:-/root/kernel}"
+
+# Auto-detect kernel directory: use KERNEL_PATH env var, or detect relative to script
+KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../..}"
+
+# Verify kernel directory exists
+if [ ! -d "${KERNEL_PATH}/arch/arm64" ]; then
+    echo "ERROR: Cannot find kernel source directory at ${KERNEL_PATH}"
+    echo "Set KERNEL_PATH environment variable to specify the location:"
+    echo "  KERNEL_PATH=/path/to/kernel $0"
+    exit 1
+fi
 
 echo "Building initrd.img..."
 
@@ -63,7 +73,7 @@ chmod +x init
 # Copy kernel modules
 mkdir -p lib/modules
 for mod in zram etmem_scan etmem_swap; do
-    ko_file="$(find ${KERNEL_DIR} -name "${mod}.ko" -print -quit 2>/dev/null)"
+    ko_file="$(find ${KERNEL_PATH} -name "${mod}.ko" -print -quit 2>/dev/null)"
     # Also check in tests directory for built module
     if [ ! -f "$ko_file" ] && [ -f "${SCRIPT_DIR}/tests/${mod}.ko" ]; then
         ko_file="${SCRIPT_DIR}/tests/${mod}.ko"

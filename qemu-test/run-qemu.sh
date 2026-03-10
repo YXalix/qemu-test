@@ -4,20 +4,30 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KERNEL="${1:-/root/kernel/arch/arm64/boot/Image}"
+
+# Auto-detect kernel directory: use KERNEL_PATH env var, or detect relative to script
+KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../../..}"
+
+# Default kernel path (can be overridden by command line argument)
+DEFAULT_KERNEL="${KERNEL_PATH}/arch/arm64/boot/Image"
+KERNEL="${1:-$DEFAULT_KERNEL}"
 INITRD="${SCRIPT_DIR}/initrd.img"
 DISK="${SCRIPT_DIR}/swap.img"
 
 # Default kernel if not provided
 if [ ! -f "$KERNEL" ]; then
     # Try alternative locations
-    if [ -f "/root/kernel/arch/arm64/boot/Image.gz" ]; then
+    ALT_KERNEL="${KERNEL_PATH}/arch/arm64/boot/Image.gz"
+    if [ -f "$ALT_KERNEL" ]; then
         echo "Note: Using compressed kernel image (Image.gz)"
-        KERNEL="/root/kernel/arch/arm64/boot/Image.gz"
+        KERNEL="$ALT_KERNEL"
     else
         echo "ERROR: Kernel image not found at $KERNEL"
         echo "Usage: $0 [path-to-Image]"
-        echo "Default: /root/kernel/arch/arm64/boot/Image"
+        echo "Default: ${DEFAULT_KERNEL}"
+        echo ""
+        echo "Set KERNEL_PATH environment variable to specify kernel source location:"
+        echo "  KERNEL_PATH=/path/to/kernel $0"
         exit 1
     fi
 fi
@@ -35,10 +45,13 @@ if [ -f "$DISK" ]; then
 fi
 
 # Memory configuration - 1GB for testing
-VM_MEMORY="3G"
+VM_MEMORY="1G"
 
-# QEMU machine type
-MACHINE="virt"
+# Huge page configuration
+# Use memfd backend with hugetlb for private anonymous huge pages
+MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,hugetlb=on,share=off"
+MACHINE="virt,memory-backend=mem"
+HUGETLB_STATUS="private hugetlb (memfd)"
 
 # CPU configuration
 CPU="cortex-a72"
@@ -73,7 +86,7 @@ echo "  Initrd: $INITRD"
 if [ -n "$DISK_OPT" ]; then
     echo "  Disk:   $DISK (512MB swap)"
 fi
-echo "  Memory: $VM_MEMORY"
+echo "  Memory: $VM_MEMORY ($HUGETLB_STATUS)"
 echo "  CPUs: $SMP"
 echo "  Auto-test: ${AUTO_TEST:-0}"
 if [ -n "$QEMU_DEBUG" ]; then
@@ -83,10 +96,26 @@ echo ""
 echo "Starting QEMU..."
 echo "=========================================="
 
+# QEMU binary - use QEMU env var or auto-detect
+if [ -n "$QEMU" ]; then
+    QEMU_BIN="$QEMU"
+elif command -v qemu-system-aarch64 >/dev/null 2>&1; then
+    QEMU_BIN="qemu-system-aarch64"
+elif [ -x "/root/github/qemu-10.2.1/build/qemu-system-aarch64" ]; then
+    QEMU_BIN="/root/github/qemu-10.2.1/build/qemu-system-aarch64"
+else
+    echo "ERROR: qemu-system-aarch64 not found"
+    echo "Set QEMU environment variable to specify the path:"
+    echo "  QEMU=/path/to/qemu-system-aarch64 $0"
+    exit 1
+fi
+
 # Launch QEMU
 set +e
-/root/github/qemu-10.2.1/build/qemu-system-aarch64 \
+
+$QEMU_BIN \
     -machine $MACHINE \
+    $MEMORY_BACKEND \
     -cpu $CPU \
     -smp $SMP \
     -m $VM_MEMORY \
@@ -98,15 +127,4 @@ set +e
     $OPTIONS \
     $DEBUG_OPTS
 
-EXIT_CODE=$?
-set -e
-
-# Exit message
-echo ""
-if [ $EXIT_CODE -eq 0 ]; then
-    echo "QEMU exited successfully"
-else
-    echo "QEMU exited with code $EXIT_CODE"
-fi
-
-exit $EXIT_CODE
+exit $?

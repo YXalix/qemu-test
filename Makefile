@@ -2,7 +2,8 @@
 # Quick start commands for testing environment
 
 QEMU_TEST_DIR := qemu-test
-KERNEL_IMAGE ?= /root/kernel/arch/arm64/boot/Image
+KERNEL_PATH ?= $(abspath $(CURDIR)/..)
+KERNEL_IMAGE ?= $(KERNEL_PATH)/arch/arm64/boot/Image
 QEMU_TIMEOUT ?= 0
 AUTO_TEST ?= 1
 
@@ -42,10 +43,17 @@ qemu-debug:
 
 qemu-test:
 	@if [ "$(QEMU_TIMEOUT)" = "0" ]; then \
-		echo "ERROR: Set QEMU_TIMEOUT (e.g., make qemu-test QEMU_TIMEOUT=15)"; \
+		echo "ERROR: Set QEMU_TIMEOUT (e.g., make qemu-test QEMU_TIMEOUT=60)"; \
 		exit 1; \
 	fi
-	@cd $(QEMU_TEST_DIR) && AUTO_TEST=$(AUTO_TEST) timeout --foreground $(QEMU_TIMEOUT) ./run-qemu.sh $(KERNEL_IMAGE)
+	@cd $(QEMU_TEST_DIR) && AUTO_TEST=$(AUTO_TEST) timeout --foreground $(QEMU_TIMEOUT) ./run-qemu.sh $(KERNEL_IMAGE); \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 124 ]; then \
+		echo "ERROR: Test timed out after $(QEMU_TIMEOUT) seconds"; \
+		exit 124; \
+	elif [ $$EXIT_CODE -ne 0 ]; then \
+		exit $$EXIT_CODE; \
+	fi
 
 build-swap:
 	@if [ -f $(QEMU_TEST_DIR)/swap.img ]; then \
