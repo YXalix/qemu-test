@@ -7,7 +7,7 @@ KERNEL_IMAGE ?= $(KERNEL_PATH)/arch/arm64/boot/Image
 QEMU_TIMEOUT ?= 0
 AUTO_TEST ?= 1
 
-.PHONY: all help qemu build-swap clean clean-swap initrd qemu-test
+.PHONY: all help qemu qemu-kvm qemu-debug build-swap clean clean-swap initrd qemu-test
 
 all: help
 
@@ -16,6 +16,7 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  qemu          - Start QEMU VM"
+	@echo "  qemu-kvm      - Start QEMU VM with KVM acceleration"
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
 	@echo "  qemu-test     - Start QEMU with timeout (for CI)"
 	@echo "  build-swap    - Build swap.img (512MB swap space)"
@@ -29,6 +30,7 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make qemu                       # Run interactively"
+	@echo "  make qemu-kvm                   # Run with KVM acceleration"
 	@echo "  make qemu-debug                 # Debug with GDB"
 	@echo "  make qemu-test QEMU_TIMEOUT=15  # Auto-test with 15s timeout"
 	@echo "  make build-all                  # Build all images"
@@ -36,6 +38,10 @@ help:
 qemu:
 	@echo "Starting QEMU..."
 	cd $(QEMU_TEST_DIR) && ./run-qemu.sh $(KERNEL_IMAGE)
+
+qemu-kvm:
+	@echo "Starting QEMU with KVM acceleration..."
+	cd $(QEMU_TEST_DIR) && QEMU_KVM=1 ./run-qemu.sh $(KERNEL_IMAGE)
 
 qemu-debug:
 	@echo "Starting QEMU with GDB stub on port 1234..."

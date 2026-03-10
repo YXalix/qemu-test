@@ -54,7 +54,15 @@ MACHINE="virt,memory-backend=mem"
 HUGETLB_STATUS="private hugetlb (memfd)"
 
 # CPU configuration
-CPU="cortex-a72"
+if [ "${QEMU_KVM:-}" = "1" ]; then
+    CPU="host"
+    KVM_OPTS="-enable-kvm"
+    ACCEL_STATUS="KVM"
+else
+    CPU="cortex-a72"
+    KVM_OPTS=""
+    ACCEL_STATUS="TCG"
+fi
 SMP="1"
 
 # Graphics (serial only for testing)
@@ -88,6 +96,7 @@ if [ -n "$DISK_OPT" ]; then
 fi
 echo "  Memory: $VM_MEMORY ($HUGETLB_STATUS)"
 echo "  CPUs: $SMP"
+echo "  Accelerator: $ACCEL_STATUS"
 echo "  Auto-test: ${AUTO_TEST:-0}"
 if [ -n "$QEMU_DEBUG" ]; then
     echo "  Debug: enabled (GDB port 1234)"
@@ -116,6 +125,7 @@ set +e
 $QEMU_BIN \
     -machine $MACHINE \
     $MEMORY_BACKEND \
+    $KVM_OPTS \
     -cpu $CPU \
     -smp $SMP \
     -m $VM_MEMORY \
