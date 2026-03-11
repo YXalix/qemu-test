@@ -23,11 +23,13 @@ int get_nr_hugepages(void);
 int get_free_hugepages(void);
 int set_nr_hugepages(int count);
 unsigned long get_vmswap(void);
+int get_hugepages_swpd(void);
 int open_swap_pages(void);
 void *alloc_hugetlb(size_t size);
 void free_hugetlb(void *addr, size_t size);
 int verify_pattern(void *addr, size_t len, unsigned char pattern);
-int trigger_swap(void *addr, size_t offset, const char *desc);
+int trigger_swap(void *addr, size_t offset);
+int trigger_swap_multi(void **addrs, int count);
 
 /* Test functions */
 void test_etmem_config(void);

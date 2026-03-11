@@ -72,7 +72,7 @@ chmod +x init
 
 # Copy kernel modules
 mkdir -p lib/modules
-for mod in zram etmem_scan etmem_swap; do
+for mod in zram etmem_scan etmem_swap virtio virtio_ring virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio; do
     ko_file="$(find ${KERNEL_PATH} -name "${mod}.ko" -print -quit 2>/dev/null)"
     # Also check in tests directory for built module
     if [ ! -f "$ko_file" ] && [ -f "${SCRIPT_DIR}/tests/${mod}.ko" ]; then

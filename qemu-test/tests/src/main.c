@@ -78,7 +78,7 @@ void test_hugetlb_alloc(void)
 void test_hugetlb_swap(void)
 {
     void *addr;
-    unsigned long swap_before, swap_after;
+    int swpd_before, swpd_after;
 
     printf("\nTest: HugeTLB Swap\n");
 
@@ -96,21 +96,21 @@ void test_hugetlb_swap(void)
     memset(addr, 0xAB, 2 * HPAGE_SIZE_2M);
     PASS("Allocated and touched 4MB");
 
-    swap_before = get_vmswap();
-    INFO("VmSwap before: %lu kB", swap_before);
+    swpd_before = get_hugepages_swpd();
+    INFO("HugePages_Swap before: %d", swpd_before);
 
-    if (trigger_swap(addr, HPAGE_SIZE_2M / 2, NULL) < 0) {
+    /* Use trigger_swap_multi to swap both hugepages */
+    void *pages[2] = {addr, (char *)addr + HPAGE_SIZE_2M};
+    if (trigger_swap_multi(pages, 2) < 0) {
         free_hugetlb(addr, 2 * HPAGE_SIZE_2M);
         return;
     }
 
-    usleep(500000);
+    swpd_after = get_hugepages_swpd();
+    INFO("HugePages_Swap after: %d", swpd_after);
 
-    swap_after = get_vmswap();
-    INFO("VmSwap after: %lu kB", swap_after);
-
-    if (swap_after > swap_before)
-        PASS("Swap out detected");
+    if (swpd_after > swpd_before)
+        PASS("Swap out detected (%d hugepages swapped)", swpd_after - swpd_before);
     else
         INFO("Swap may still be pending");
 
@@ -123,7 +123,7 @@ void test_hugetlbfs_swap(void)
     int fd;
     void *addr;
     char *hugetlb_file = "/mnt/huge/test_swap";
-    unsigned long swap_before, swap_after;
+    int swpd_before, swpd_after;
     int free_hp_before, free_hp_after;
 
     printf("\nTest: hugetlbfs-based Swap\n");
@@ -173,22 +173,28 @@ void test_hugetlbfs_swap(void)
         PASS("Memory write/read verified");
 
     free_hp_before = get_free_hugepages();
-    swap_before = get_vmswap();
+    swpd_before = get_hugepages_swpd();
     INFO("Free hugepages before: %d", free_hp_before);
-    INFO("VmSwap before: %lu kB", swap_before);
+    INFO("HugePages_Swap before: %d", swpd_before);
 
     /* Trigger swap via etmem */
-    trigger_swap(addr, HPAGE_SIZE_2M / 2, "hugetlbfs page");
+    if (trigger_swap(addr, HPAGE_SIZE_2M / 2) < 0) {
+        munmap(addr, HPAGE_SIZE_2M);
+        unlink(hugetlb_file);
+        return;
+    }
 
     free_hp_after = get_free_hugepages();
-    swap_after = get_vmswap();
+    swpd_after = get_hugepages_swpd();
     INFO("Free hugepages after: %d", free_hp_after);
-    INFO("VmSwap after: %lu kB", swap_after);
+    INFO("HugePages_Swap after: %d", swpd_after);
 
-    if (swap_after > swap_before && free_hp_after > free_hp_before) {
-        PASS("hugetlbfs swap verified: pages returned to pool");
-    } else if (swap_after > swap_before) {
-        PASS("Swap detected (VmSwap increased)");
+    if (swpd_after > swpd_before && free_hp_after > free_hp_before) {
+        PASS("hugetlbfs swap verified: %d pages swapped, pool increased",
+             swpd_after - swpd_before);
+    } else if (swpd_after > swpd_before) {
+        PASS("Swap detected (HugePages_Swpd increased by %d)",
+             swpd_after - swpd_before);
     } else {
         INFO("Swap may not have completed");
     }

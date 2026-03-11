@@ -93,15 +93,26 @@ load_modules() {
     local loaded=0
     local failed=0
 
-    for mod in "$MODULES_DIR"/*.ko; do
-        if [ -f "$mod" ]; then
-            if insmod "$mod" 2>/dev/null; then
-                LOG_OK "Loaded: $(basename $mod)"
-                loaded=$((loaded + 1))
-            else
-                LOG_WARN "Failed: $(basename $mod)"
-                failed=$((failed + 1))
-            fi
+    # Load virtio modules first (for virtio-blk support)
+    LOG_INFO "Loading virtio modules..."
+    for mod in virtio_ring virtio virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio; do
+        if modprobe "$mod" 2>/dev/null || insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
+            LOG_OK "Loaded: $mod"
+            loaded=$((loaded + 1))
+        else
+            LOG_WARN "Failed to load: $mod"
+        fi
+    done
+
+    # Load specific kernel modules
+    LOG_INFO "Loading hugetlb swap modules..."
+    for mod in etmem_scan etmem_swap zram; do
+        if modprobe "$mod" 2>/dev/null || insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
+            LOG_OK "Loaded: $mod"
+            loaded=$((loaded + 1))
+        else
+            LOG_WARN "Failed: $mod"
+            failed=$((failed + 1))
         fi
     done
 
@@ -215,6 +226,11 @@ print_status() {
     else
         echo "  Hugepage support not available"
     fi
+
+    # Block devices
+    echo ""
+    echo "Block Devices:"
+    ls -la /sys/class/block/ 2>/dev/null | grep -v "^total" | sed 's/^/  /' || echo "  No block devices found"
 
     # Swap info
     echo ""
