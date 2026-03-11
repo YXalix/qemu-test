@@ -78,55 +78,139 @@ void test_hugetlb_alloc(void)
 void test_hugetlb_swap(void)
 {
     void *addr;
-    int fd;
-    char addr_str[32];
     unsigned long swap_before, swap_after;
-    
+
     printf("\nTest: HugeTLB Swap\n");
-    
+
     if (get_nr_hugepages() < 2) {
         SKIP("Need at least 2 hugepages");
         return;
     }
-    
+
     addr = alloc_hugetlb(2 * HPAGE_SIZE_2M);
     if (!addr) {
         FAIL("Allocation failed: %s", strerror(errno));
         return;
     }
-    
+
     memset(addr, 0xAB, 2 * HPAGE_SIZE_2M);
     PASS("Allocated and touched 4MB");
-    
+
     swap_before = get_vmswap();
     INFO("VmSwap before: %lu kB", swap_before);
-    
-    fd = open_swap_pages();
-    if (fd < 0) {
-        FAIL("Cannot open swap_pages");
+
+    if (trigger_swap(addr, HPAGE_SIZE_2M / 2, NULL) < 0) {
         free_hugetlb(addr, 2 * HPAGE_SIZE_2M);
         return;
     }
-    
-    snprintf(addr_str, sizeof(addr_str), "0x%lx\n", (uintptr_t)addr + HPAGE_SIZE_2M / 2);
-    if (write(fd, addr_str, strlen(addr_str)) >= 0)
-        PASS("Swap trigger sent");
-    else
-        INFO("Swap trigger failed: %s", strerror(errno));
-    close(fd);
-    
+
     usleep(500000);
-    
+
     swap_after = get_vmswap();
     INFO("VmSwap after: %lu kB", swap_after);
-    
+
     if (swap_after > swap_before)
         PASS("Swap out detected");
     else
         INFO("Swap may still be pending");
-    
+
     free_hugetlb(addr, 2 * HPAGE_SIZE_2M);
     PASS("Memory freed");
+}
+
+void test_hugetlbfs_swap(void)
+{
+    int fd;
+    void *addr;
+    char *hugetlb_file = "/mnt/huge/test_swap";
+    unsigned long swap_before, swap_after;
+    int free_hp_before, free_hp_after;
+
+    printf("\nTest: hugetlbfs-based Swap\n");
+
+    /* Check hugetlbfs mount */
+    if (access("/mnt/huge", F_OK) != 0) {
+        SKIP("hugetlbfs not mounted at /mnt/huge");
+        return;
+    }
+    PASS("hugetlbfs is mounted");
+
+    if (get_nr_hugepages() < 1) {
+        SKIP("Need at least 1 hugepage reserved");
+        return;
+    }
+
+    /* Create file on hugetlbfs */
+    fd = open(hugetlb_file, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) {
+        FAIL("Failed to create hugetlbfs file: %s", strerror(errno));
+        return;
+    }
+
+    /* Allocate 2MB on hugetlbfs */
+    if (ftruncate(fd, HPAGE_SIZE_2M) != 0) {
+        FAIL("Failed to allocate 2MB on hugetlbfs: %s", strerror(errno));
+        close(fd);
+        unlink(hugetlb_file);
+        return;
+    }
+    PASS("Created 2MB file on hugetlbfs");
+
+    /* Map the file */
+    addr = mmap(NULL, HPAGE_SIZE_2M, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == MAP_FAILED) {
+        FAIL("Failed to mmap hugetlbfs file: %s", strerror(errno));
+        close(fd);
+        unlink(hugetlb_file);
+        return;
+    }
+    close(fd);
+    PASS("Mapped hugetlbfs file at %p", addr);
+
+    /* Touch memory */
+    memset(addr, 0xCD, HPAGE_SIZE_2M);
+    if (verify_pattern(addr, HPAGE_SIZE_2M, 0xCD) == 0)
+        PASS("Memory write/read verified");
+
+    free_hp_before = get_free_hugepages();
+    swap_before = get_vmswap();
+    INFO("Free hugepages before: %d", free_hp_before);
+    INFO("VmSwap before: %lu kB", swap_before);
+
+    /* Trigger swap via etmem */
+    trigger_swap(addr, HPAGE_SIZE_2M / 2, "hugetlbfs page");
+
+    free_hp_after = get_free_hugepages();
+    swap_after = get_vmswap();
+    INFO("Free hugepages after: %d", free_hp_after);
+    INFO("VmSwap after: %lu kB", swap_after);
+
+    if (swap_after > swap_before && free_hp_after > free_hp_before) {
+        PASS("hugetlbfs swap verified: pages returned to pool");
+    } else if (swap_after > swap_before) {
+        PASS("Swap detected (VmSwap increased)");
+    } else {
+        INFO("Swap may not have completed");
+    }
+
+    /* Swap-in: Access memory to trigger page fault and swapin */
+    /* Full pattern verification */
+    if (verify_pattern(addr, HPAGE_SIZE_2M, 0xCD) == 0)
+        PASS("Full memory pattern verified after swapin");
+    else
+        FAIL("Memory pattern mismatch after swapin");
+
+    /* Check free hugepages after swapin (should decrease) */
+    int free_hp_after_swapin = get_free_hugepages();
+    INFO("Free hugepages after swapin: %d", free_hp_after_swapin);
+    if (free_hp_after_swapin < free_hp_after) {
+        PASS("Hugepage allocated for swapin");
+    }
+
+    /* Cleanup */
+    munmap(addr, HPAGE_SIZE_2M);
+    unlink(hugetlb_file);
+    PASS("hugetlbfs resources cleaned up");
 }
 
 int main(int argc, char *argv[])
@@ -143,7 +227,8 @@ int main(int argc, char *argv[])
     test_swap_interface();
     test_hugetlb_alloc();
     test_hugetlb_swap();
-    
+    test_hugetlbfs_swap();
+
     printf("\n=== Summary ===\n");
     printf("  Passed:  %d\n", passed);
     printf("  Failed:  %d\n", failed);

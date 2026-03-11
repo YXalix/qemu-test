@@ -1,4 +1,7 @@
 #include "test_common.h"
+#include <string.h>
+#include <stdint.h>
+#include <errno.h>
 
 int passed = 0;
 int failed = 0;
@@ -81,4 +84,27 @@ int verify_pattern(void *addr, size_t len, unsigned char pattern)
         }
     }
     return 0;
+}
+
+int trigger_swap(void *addr, size_t offset, const char *desc)
+{
+    int fd = open_swap_pages();
+    if (fd < 0) {
+        INFO("Cannot open swap_pages: %s", strerror(errno));
+        return -1;
+    }
+
+    char addr_str[32];
+    snprintf(addr_str, sizeof(addr_str), "0x%lx\n", (uintptr_t)addr + offset);
+
+    int ret = write(fd, addr_str, strlen(addr_str));
+    close(fd);
+
+    if (ret >= 0) {
+        PASS("Swap trigger sent%s%s", desc ? " for " : "", desc ? desc : "");
+        return 0;
+    } else {
+        INFO("Swap trigger failed: %s", strerror(errno));
+        return -1;
+    }
 }

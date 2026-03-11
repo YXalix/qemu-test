@@ -27,11 +27,13 @@ int open_swap_pages(void);
 void *alloc_hugetlb(size_t size);
 void free_hugetlb(void *addr, size_t size);
 int verify_pattern(void *addr, size_t len, unsigned char pattern);
+int trigger_swap(void *addr, size_t offset, const char *desc);
 
 /* Test functions */
 void test_etmem_config(void);
 void test_swap_interface(void);
 void test_hugetlb_alloc(void);
 void test_hugetlb_swap(void);
+void test_hugetlbfs_swap(void);
 
 #endif
