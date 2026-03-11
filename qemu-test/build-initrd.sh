@@ -89,13 +89,13 @@ echo "Building tests..."
 mkdir -p tests
 if [ -d "${SCRIPT_DIR}/tests" ]; then
     cd "${SCRIPT_DIR}/tests"
-    make -s clean 2>/dev/null || true
+    # Build using Makefile (which wraps CMake)
     make -s 2>/dev/null || true
     cd "${ROOTFS_DIR}"
 
-    # Copy from build directory
-    if [ -d "${SCRIPT_DIR}/tests/build" ]; then
-        for test_bin in "${SCRIPT_DIR}/tests/build"/*; do
+    # Copy from build/bin directory
+    if [ -d "${SCRIPT_DIR}/tests/build/bin" ]; then
+        for test_bin in "${SCRIPT_DIR}/tests/build/bin"/*; do
             if [ -f "$test_bin" ] && [ -x "$test_bin" ]; then
                 cp "$test_bin" tests/
                 chmod +x "tests/$(basename "$test_bin")"
