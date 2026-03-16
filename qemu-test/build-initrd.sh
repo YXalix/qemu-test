@@ -70,19 +70,44 @@ cd "${ROOTFS_DIR}"
 cp "${SCRIPT_DIR}/init" .
 chmod +x init
 
-# Copy kernel modules
-mkdir -p lib/modules
-for mod in zram etmem_scan etmem_swap virtio virtio_ring virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio; do
+# Copy kernel module to lib/modules if found
+# Usage: copy_module <module_name>
+copy_module() {
+    local mod="$1"
+    local ko_file
+
     ko_file="$(find ${KERNEL_PATH} -name "${mod}.ko" -print -quit 2>/dev/null)"
-    # Also check in tests directory for built module
-    if [ ! -f "$ko_file" ] && [ -f "${SCRIPT_DIR}/tests/${mod}.ko" ]; then
+
+    # Fallback to tests directory
+    if [ ! -f "$ko_file" ]; then
         ko_file="${SCRIPT_DIR}/tests/${mod}.ko"
     fi
+
     if [ -f "$ko_file" ]; then
         cp "$ko_file" lib/modules/
         echo "  Module: ${mod}.ko"
     fi
-done
+}
+
+# Copy kernel modules
+echo "Copying kernel modules..."
+mkdir -p lib/modules
+
+# Copy modules by category
+copy_modules() {
+    for mod in "$@"; do
+        copy_module "$mod"
+    done
+}
+
+# Core modules
+copy_modules zram etmem_scan etmem_swap
+
+# Virtio drivers
+copy_modules virtio virtio_ring virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio
+
+# KAE (Kunpeng Acceleration Engine) modules
+copy_modules uacce hisi_qm authenc hisi_sec2 libcurve25519-generic ecdh_generic ecc dh_generic hisi_hpre hisi_zip
 
 # Build and copy tests
 echo "Building tests..."

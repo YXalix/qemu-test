@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include "test_common.h"
+#include "test_kae.h"
 
 void test_etmem_config(void)
 {
@@ -118,15 +119,15 @@ void test_hugetlb_swap(void)
     PASS("Memory freed");
 }
 
-void test_hugetlbfs_swap(void)
+/* Reuse test_hugetlbfs_swap with different file path */
+void test_hugetlbfs_swap_internal(const char *test_name, const char *hugetlb_file)
 {
     int fd;
     void *addr;
-    char *hugetlb_file = "/mnt/huge/test_swap";
     int swpd_before, swpd_after;
     int free_hp_before, free_hp_after;
 
-    printf("\nTest: hugetlbfs-based Swap\n");
+    printf("\nTest: %s\n", test_name);
 
     /* Check hugetlbfs mount */
     if (access("/mnt/huge", F_OK) != 0) {
@@ -219,6 +220,36 @@ void test_hugetlbfs_swap(void)
     PASS("hugetlbfs resources cleaned up");
 }
 
+void test_hugetlbfs_swap(void)
+{
+    test_hugetlbfs_swap_internal("hugetlbfs-based Swap", "/mnt/huge/test_swap");
+}
+
+void test_hugetlbfs_swap_deflate(void)
+{
+    int kae_status;
+
+    printf("\nTest: hugetlbfs Swap with Deflate\n");
+
+    /* Setup KAE deflate */
+    kae_status = kae_test_setup();
+    if (kae_status < 0)
+        return;  /* Skip if deflate not available */
+
+    /* Report which deflate implementation is being used */
+    if (kae_status == 1)
+        PASS("Using KAE hardware deflate");
+    else
+        INFO("Using CPU software deflate (no KAE hardware)");
+
+    /* Run the standard swap test with deflate compression */
+    test_hugetlbfs_swap_internal("hugetlbfs Swap with Deflate",
+                                  "/mnt/huge/test_kae_deflate");
+
+    /* Restore original algorithm */
+    kae_test_cleanup();
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc; (void)argv;
@@ -234,6 +265,7 @@ int main(int argc, char *argv[])
     test_hugetlb_alloc();
     test_hugetlb_swap();
     test_hugetlbfs_swap();
+    test_hugetlbfs_swap_deflate();
 
     printf("\n=== Summary ===\n");
     printf("  Passed:  %d\n", passed);

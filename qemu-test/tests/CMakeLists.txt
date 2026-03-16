@@ -11,6 +11,7 @@ include_directories(src)
 add_executable(test-hugetlb
     src/main.c
     src/test_common.c
+    src/test_kae.c
 )
 
 set_target_properties(test-hugetlb PROPERTIES

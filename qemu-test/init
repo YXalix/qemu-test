@@ -86,6 +86,39 @@ mount_hugetlbfs() {
     fi
 }
 
+# Load a kernel module with fallback to insmod
+# Usage: load_module <module_name> [module_params...]
+load_module() {
+    local mod="$1"
+    shift
+    local params="$*"
+
+    if modprobe "$mod" $params 2>/dev/null || \
+       insmod "$MODULES_DIR/${mod}.ko" $params 2>/dev/null; then
+        LOG_OK "Loaded: $mod"
+        return 0
+    fi
+    return 1
+}
+
+# Load multiple modules, log summary
+# Usage: load_modules_group <group_name> <module1> [module2...]
+load_modules_group() {
+    local group="$1"
+    shift
+    local mod
+    local count=0
+
+    LOG_INFO "Loading $group..."
+    for mod in "$@"; do
+        if load_module "$mod"; then
+            loaded=$((loaded + 1))
+            count=$((count + 1))
+        fi
+    done
+    return $count
+}
+
 # Load kernel modules from /lib/modules
 load_modules() {
     LOG_INFO "Loading kernel modules..."
@@ -93,36 +126,28 @@ load_modules() {
     local loaded=0
     local failed=0
 
-    # Load virtio modules first (for virtio-blk support)
-    LOG_INFO "Loading virtio modules..."
-    for mod in virtio_ring virtio virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio; do
-        if modprobe "$mod" 2>/dev/null || insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
-            LOG_OK "Loaded: $mod"
-            loaded=$((loaded + 1))
-        else
-            LOG_WARN "Failed to load: $mod"
-        fi
-    done
+    # Virtio drivers (for virtio-blk support)
+    load_modules_group "virtio drivers" \
+        virtio_ring virtio virtio_blk \
+        virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio
 
-    # Load specific kernel modules
-    LOG_INFO "Loading hugetlb swap modules..."
-    for mod in etmem_scan etmem_swap zram; do
-        if modprobe "$mod" 2>/dev/null || insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
-            LOG_OK "Loaded: $mod"
-            loaded=$((loaded + 1))
-        else
-            LOG_WARN "Failed: $mod"
-            failed=$((failed + 1))
-        fi
-    done
+    # Core hugetlb swap modules
+    load_modules_group "hugetlb swap modules" \
+        etmem_scan etmem_swap zram
+
+    # KAE (Kunpeng Acceleration Engine) modules - hardware specific
+    LOG_INFO "Loading KAE modules..."
+    load_modules_group "KAE pre-deps modules" \
+        uacce hisi_qm authenc libcurve25519-generic ecc ecdh_generic dh_generic
+    load_module hisi_sec2 uacce_mode=2 pf_q_num=256
+    load_module hisi_hpre uacce_mode=2 pf_q_num=256
+
+    # KAE ZIP requires Hisilicon hardware - not available in QEMU
+    LOG_INFO "KAE ZIP skipped (requires Hisilicon ZIP hardware)"
 
     sleep 1
 
-    if [ $loaded -eq 0 ] && [ $failed -eq 0 ]; then
-        LOG_WARN "No modules found in $MODULES_DIR"
-    else
-        LOG_INFO "Modules: $loaded loaded, $failed failed"
-    fi
+    LOG_INFO "Modules: $loaded loaded"
 }
 
 # Setup zram swap device
@@ -131,32 +156,32 @@ setup_zram() {
 
     local zram_dev=""
 
-    # Try modern zram interface first
-    if [ -f /sys/class/zram-control/hot_add ]; then
-        zram_dev=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
-        if [ -n "$zram_dev" ]; then
-            echo lz4 > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || \
-                echo lzo > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || true
-            echo "$ZRAM_SIZE" > /sys/block/zram${zram_dev}/disksize 2>/dev/null
-
-            if mkswap /dev/zram${zram_dev} 2>/dev/null && swapon /dev/zram${zram_dev} 2>/dev/null; then
-                LOG_OK "Zram swap enabled on zram${zram_dev}"
-                return 0
-            fi
+    # Prefer zram0 if available and unused (disksize == 0)
+    if [ -d /sys/block/zram0 ]; then
+        local disksize=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
+        if [ "$disksize" = "0" ]; then
+            zram_dev=0
+            LOG_INFO "Using unused zram0"
         fi
     fi
 
-    # Fallback to legacy zram0
-    if [ -d /sys/block/zram0 ]; then
-        echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || \
-            echo lzo > /sys/block/zram0/comp_algorithm 2>/dev/null || true
-        echo "$ZRAM_SIZE" > /sys/block/zram0/disksize 2>/dev/null
+    # Create new device if zram0 not available
+    if [ -z "$zram_dev" ] && [ -f /sys/class/zram-control/hot_add ]; then
+        # Create new zram device
+        zram_dev=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
+        LOG_INFO "Created zram${zram_dev} via hot_add"
+    fi
 
-        if mkswap /dev/zram0 2>/dev/null && swapon /dev/zram0 2>/dev/null; then
-            LOG_OK "Zram swap enabled on zram0"
+    if [ -n "$zram_dev" ]; then
+        echo lz4 > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || \
+            echo lzo > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || true
+        echo "$ZRAM_SIZE" > /sys/block/zram${zram_dev}/disksize 2>/dev/null
+
+        if mkswap /dev/zram${zram_dev} 2>/dev/null && swapon /dev/zram${zram_dev} 2>/dev/null; then
+            LOG_OK "Zram swap enabled on zram${zram_dev}"
             return 0
         else
-            echo 0 > /sys/block/zram0/disksize 2>/dev/null || true
+            echo 0 > /sys/block/zram${zram_dev}/disksize 2>/dev/null || true
         fi
     fi
 
@@ -255,7 +280,7 @@ print_status() {
 
     echo ""
     echo "Test commands:"
-    echo "  test-etmem    - ETMEM interface tests"
+    echo "  test-etmem          - ETMEM interface tests"
     echo ""
 }
 
