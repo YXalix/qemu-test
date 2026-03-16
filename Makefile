@@ -27,10 +27,12 @@ help:
 	@echo "Variables:"
 	@echo "  KERNEL_IMAGE   - Path to kernel image (default: $(KERNEL_IMAGE))"
 	@echo "  QEMU_TIMEOUT   - Timeout for qemu-test in seconds (0 = no timeout)"
+	@echo "  KAE            - PCI device for hisi_zip passthrough (e.g., 04:00.0)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make qemu                       # Run interactively"
 	@echo "  make qemu-kvm                   # Run with KVM acceleration"
+	@echo "  make qemu-kvm KAE=31:00.1  	 # Run with KAE ZIP passthrough"
 	@echo "  make qemu-debug                 # Debug with GDB"
 	@echo "  make qemu-test QEMU_TIMEOUT=15  # Auto-test with 15s timeout"
 	@echo "  make build-all                  # Build all images"
@@ -41,7 +43,10 @@ qemu:
 
 qemu-kvm:
 	@echo "Starting QEMU with KVM acceleration..."
-	cd $(QEMU_TEST_DIR) && QEMU_KVM=1 ./run-qemu.sh $(KERNEL_IMAGE)
+ifdef KAE
+	@echo "KAE ZIP passthrough: $(KAE)"
+endif
+	cd $(QEMU_TEST_DIR) && QEMU_KVM=1 KAE=$(KAE) ./run-qemu.sh $(KERNEL_IMAGE)
 
 qemu-debug:
 	@echo "Starting QEMU with GDB stub on port 1234..."

@@ -135,17 +135,13 @@ load_modules() {
     load_modules_group "hugetlb swap modules" \
         etmem_scan etmem_swap zram
 
-    # KAE (Kunpeng Acceleration Engine) modules - hardware specific
+    # KAE (Kunpeng Acceleration Engine) - hisi_zip only
     LOG_INFO "Loading KAE modules..."
-    load_modules_group "KAE pre-deps modules" \
-        uacce hisi_qm authenc libcurve25519-generic ecc ecdh_generic dh_generic
-    load_module hisi_sec2 uacce_mode=2 pf_q_num=256
-    load_module hisi_hpre uacce_mode=2 pf_q_num=256
+    load_modules_group "KAE dependencies" \
+        uacce hisi_qm
 
-    # KAE ZIP requires Hisilicon hardware - not available in QEMU
-    LOG_INFO "KAE ZIP skipped (requires Hisilicon ZIP hardware)"
-
-    sleep 1
+    # KAE ZIP requires Hisilicon hardware -  uacce_mode=2 pf_q_num=256
+    load_module hisi_zip uacce_mode=2 pf_q_num=256
 
     LOG_INFO "Modules: $loaded loaded"
 }
@@ -287,7 +283,6 @@ print_status() {
 # Wait for system to be ready
 wait_for_system() {
     LOG_INFO "Waiting for system to settle..."
-    sleep 2
 
     if grep -q "^/dev" /proc/swaps 2>/dev/null; then
         LOG_OK "Swap is ready"

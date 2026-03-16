@@ -86,6 +86,16 @@ if [ "${AUTO_TEST:-}" = "1" ]; then
     AUTO_TEST_FLAG=" auto_test"
 fi
 
+# KAE PCI Passthrough (hisi_zip)
+KAE_OPTS=""
+if [ -n "${KAE:-}" ]; then
+    if [ ! -e "/sys/bus/pci/devices/0000:${KAE}" ]; then
+        echo "ERROR: KAE device ${KAE} not found"
+        exit 1
+    fi
+    KAE_OPTS="-device vfio-pci,host=${KAE}"
+fi
+
 echo "=========================================="
 echo "QEMU Hugetlb Swap Test Environment"
 echo "=========================================="
@@ -97,6 +107,9 @@ fi
 echo "  Memory: $VM_MEMORY ($HUGETLB_STATUS)"
 echo "  CPUs: $SMP"
 echo "  Accelerator: $ACCEL_STATUS"
+if [ -n "${KAE:-}" ]; then
+    echo "  KAE: PCI passthrough $KAE"
+fi
 echo "  Auto-test: ${AUTO_TEST:-0}"
 if [ -n "$QEMU_DEBUG" ]; then
     echo "  Debug: enabled (GDB port 1234)"
@@ -110,6 +123,8 @@ if [ -n "$QEMU" ]; then
     QEMU_BIN="$QEMU"
 elif command -v qemu-system-aarch64 >/dev/null 2>&1; then
     QEMU_BIN="qemu-system-aarch64"
+elif command -v qemu-kvm >/dev/null 2>&1; then
+    QEMU_BIN="qemu-kvm"
 elif [ -x "/root/github/qemu-10.2.1/build/qemu-system-aarch64" ]; then
     QEMU_BIN="/root/github/qemu-10.2.1/build/qemu-system-aarch64"
 else
@@ -133,6 +148,7 @@ $QEMU_BIN \
     -initrd "$INITRD" \
     -append "console=ttyAMA0 root=/dev/ram0 rw=1 init=/init loglevel=8${AUTO_TEST_FLAG}" \
     $DISK_OPT \
+    $KAE_OPTS \
     $CONSOLE \
     $OPTIONS \
     $DEBUG_OPTS

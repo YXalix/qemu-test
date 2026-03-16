@@ -106,8 +106,8 @@ copy_modules zram etmem_scan etmem_swap
 # Virtio drivers
 copy_modules virtio virtio_ring virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio
 
-# KAE (Kunpeng Acceleration Engine) modules
-copy_modules uacce hisi_qm authenc hisi_sec2 libcurve25519-generic ecdh_generic ecc dh_generic hisi_hpre hisi_zip
+# KAE (Kunpeng Acceleration Engine) modules - hisi_zip only
+copy_modules uacce hisi_qm hisi_zip
 
 # Build and copy tests
 echo "Building tests..."
