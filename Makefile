@@ -67,12 +67,11 @@ qemu-test:
 	fi
 
 build-swap:
-	@if [ -f $(QEMU_TEST_DIR)/swap.img ]; then \
-		echo "swap.img already exists."; \
+	@if [ -f $(QEMU_TEST_DIR)/swap.qcow2 ]; then \
+		echo "swap.qcow2 already exists."; \
 	else \
-		echo "Creating swap.img (512MB)..."; \
-		dd if=/dev/zero of=$(QEMU_TEST_DIR)/swap.img bs=1M count=512; \
-		mkswap $(QEMU_TEST_DIR)/swap.img; \
+		echo "Creating swap.qcow2 (512MB qcow2 format)..."; \
+		qemu-img create -f qcow2 $(QEMU_TEST_DIR)/swap.qcow2 512M; \
 	fi
 
 initrd:
@@ -84,7 +83,7 @@ build-all: build-swap initrd
 	@ls -lh $(QEMU_TEST_DIR)/*.img 2>/dev/null || true
 
 clean:
-	rm -f $(QEMU_TEST_DIR)/swap.img $(QEMU_TEST_DIR)/initrd.img
+	rm -f $(QEMU_TEST_DIR)/swap.qcow2 $(QEMU_TEST_DIR)/initrd.img
 
 clean-swap:
-	rm -f $(QEMU_TEST_DIR)/swap.img
+	rm -f $(QEMU_TEST_DIR)/swap.qcow2

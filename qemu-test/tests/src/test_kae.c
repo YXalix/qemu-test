@@ -196,7 +196,6 @@ static int zram_reset(void)
     int fd;
 
     /* First swapoff if zram is being used as swap */
-    INFO("Disabling swap on zram0 if active");
     zram_disable_swap();
 
     /* Try reset - this deinitializes and clears the device */
@@ -252,17 +251,14 @@ int kae_test_setup(void)
     if (zram_get_algo(saved_algo, sizeof(saved_algo)) == 0) {
         saved_algo_valid = 1;
         saved_disksize = zram_get_disksize();
-        INFO("Saved zram algo: %s, disksize: %llu", saved_algo, saved_disksize);
     }
 
     /* Check if zram is initialized - if so, we need to reset it first */
     if (zram_is_initialized()) {
-        INFO("zram0 is initialized, resetting to allow algorithm change");
         if (zram_reset() < 0) {
             FAIL("Failed to reset zram0");
             return -1;
         }
-        INFO("zram0 reset successfully");
     }
 
     /* Switch to deflate */
@@ -273,10 +269,7 @@ int kae_test_setup(void)
 
     /* Restore disksize if it was set before */
     if (saved_disksize > 0) {
-        if (zram_set_disksize(saved_disksize) == 0)
-            INFO("Restored zram disksize: %llu", saved_disksize);
-        else
-            FAIL("Failed to restore zram disksize: %llu", saved_disksize);
+        zram_set_disksize(saved_disksize);
     }
 
     /* Enable swap on zram */
@@ -284,9 +277,7 @@ int kae_test_setup(void)
         FAIL("Failed to enable swap on zram0");
         return -1;
     }
-    INFO("Enabled swap on zram0");
-
-    PASS("Zram algorithm set to deflate");
+    PASS("Zram configured: deflate compression, %llu bytes", saved_disksize);
     return kae_present;
 }
 
@@ -298,24 +289,20 @@ void kae_test_cleanup(void)
 
     /* Reset zram before changing algorithm */
     if (zram_is_initialized()) {
-        INFO("Resetting zram0 before restoring algorithm");
         if (zram_reset() < 0) {
             FAIL("Failed to reset zram0 during cleanup");
             return;
         }
     }
 
-    if (zram_set_algo(saved_algo) == 0)
-        INFO("Restored zram algo: %s", saved_algo);
-    else
+    if (zram_set_algo(saved_algo) != 0) {
         FAIL("Failed to restore zram algo: %s", saved_algo);
+        return;
+    }
 
     /* Restore disksize if it was set before */
     if (saved_disksize > 0) {
-        if (zram_set_disksize(saved_disksize) == 0)
-            INFO("Restored zram disksize: %llu", saved_disksize);
-        else
-            FAIL("Failed to restore zram disksize: %llu", saved_disksize);
+        zram_set_disksize(saved_disksize);
     }
 
     /* Enable swap on zram */
@@ -323,7 +310,6 @@ void kae_test_cleanup(void)
         FAIL("Failed to enable swap on zram0 during cleanup");
         return;
     }
-    INFO("Enabled swap on zram0");
 
     saved_disksize = 0;
     saved_algo_valid = 0;

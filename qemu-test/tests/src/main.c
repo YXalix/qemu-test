@@ -127,7 +127,8 @@ void test_hugetlbfs_swap_internal(const char *test_name, const char *hugetlb_fil
     int swpd_before, swpd_after;
     int free_hp_before, free_hp_after;
 
-    printf("\nTest: %s\n", test_name);
+    if (test_name)
+        printf("\nTest: %s\n", test_name);
 
     /* Check hugetlbfs mount */
     if (access("/mnt/huge", F_OK) != 0) {
@@ -242,9 +243,8 @@ void test_hugetlbfs_swap_deflate(void)
     else
         INFO("Using CPU software deflate (no KAE hardware)");
 
-    /* Run the standard swap test with deflate compression */
-    test_hugetlbfs_swap_internal("hugetlbfs Swap with Deflate",
-                                  "/mnt/huge/test_kae_deflate");
+    /* Run the standard swap test with deflate compression (no test header) */
+    test_hugetlbfs_swap_internal(NULL, "/mnt/huge/test_kae_deflate");
 
     /* Restore original algorithm */
     kae_test_cleanup();

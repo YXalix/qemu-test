@@ -1,6 +1,6 @@
 qemu-test/busybox
 qemu-test/rootfs
-qemu-test/swap.img
+qemu-test/swap.qcow2
 qemu-test/initrd.img
 
 # Test build directory

@@ -12,7 +12,7 @@ KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../../..}"
 DEFAULT_KERNEL="${KERNEL_PATH}/arch/arm64/boot/Image"
 KERNEL="${1:-$DEFAULT_KERNEL}"
 INITRD="${SCRIPT_DIR}/initrd.img"
-DISK="${SCRIPT_DIR}/swap.img"
+DISK="${SCRIPT_DIR}/swap.qcow2"
 
 # Default kernel if not provided
 if [ ! -f "$KERNEL" ]; then
@@ -38,10 +38,11 @@ if [ ! -f "$INITRD" ]; then
     exit 1
 fi
 
-# Check for disk image
+# Check for disk image - use NVMe SSD interface
 DISK_OPT=""
 if [ -f "$DISK" ]; then
-    DISK_OPT="-drive file=$DISK,format=raw,if=virtio"
+    DISK_OPT="-blockdev driver=qcow2,file.driver=file,file.filename=$DISK,node-name=ssd0,discard=unmap,file.discard=unmap "
+    DISK_OPT+="-device nvme,drive=ssd0,serial=nvme-ssd-0"
 fi
 
 # Memory configuration - 1GB for testing
@@ -102,7 +103,7 @@ echo "=========================================="
 echo "  Kernel: $KERNEL"
 echo "  Initrd: $INITRD"
 if [ -n "$DISK_OPT" ]; then
-    echo "  Disk:   $DISK (512MB swap)"
+    echo "  Disk:   $DISK (512MB NVMe SSD swap)"
 fi
 echo "  Memory: $VM_MEMORY ($HUGETLB_STATUS)"
 echo "  CPUs: $SMP"

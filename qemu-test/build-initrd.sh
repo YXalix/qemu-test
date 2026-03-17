@@ -100,6 +100,9 @@ copy_modules() {
     done
 }
 
+# Nvme and related modules for disk swap support
+copy_modules crc64 crc64-rocksoft t10-pi nvme-core nvme
+
 # Core modules
 copy_modules zram etmem_scan etmem_swap
 

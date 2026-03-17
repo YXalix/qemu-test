@@ -126,6 +126,10 @@ load_modules() {
     local loaded=0
     local failed=0
 
+    # Nvme driver (for swap disk support)
+    load_modules_group "NVMe driver" \
+        crc64 crc64-rocksoft t10-pi nvme-core nvme
+
     # Virtio drivers (for virtio-blk support)
     load_modules_group "virtio drivers" \
         virtio_ring virtio virtio_blk \
@@ -187,9 +191,9 @@ setup_zram() {
 
 # Setup disk-based swap if available
 setup_disk_swap() {
-    if [ -b /dev/vda ]; then
+    if [ -b /dev/nvme0n1 ]; then
         LOG_INFO "Setting up disk swap..."
-        if mkswap /dev/vda 2>/dev/null && swapon /dev/vda 2>/dev/null; then
+        if mkswap /dev/nvme0n1 2>/dev/null && swapon /dev/nvme0n1 2>/dev/null; then
             LOG_OK "Disk swap enabled"
             return 0
         fi
@@ -333,6 +337,11 @@ run_auto_tests() {
         echo "TEST_COMPLETE: SOME TESTS FAILED"
     fi
     echo "=========================================="
+
+    # Print final HugePages status
+    echo ""
+    echo "Final HugePages Status:"
+    grep "^Huge" /proc/meminfo
 
     return $test_failed
 }
