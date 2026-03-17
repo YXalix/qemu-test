@@ -41,7 +41,7 @@ fi
 # Check for disk image - use NVMe SSD interface
 DISK_OPT=""
 if [ -f "$DISK" ]; then
-    DISK_OPT="-blockdev driver=qcow2,file.driver=file,file.filename=$DISK,node-name=ssd0,discard=unmap,file.discard=unmap "
+    DISK_OPT="-blockdev driver=qcow2,file.driver=file,file.filename=$DISK,node-name=ssd0,discard=unmap,file.discard=unmap,file.locking=off "
     DISK_OPT+="-device nvme,drive=ssd0,serial=nvme-ssd-0"
 fi
 
@@ -64,7 +64,7 @@ else
     KVM_OPTS=""
     ACCEL_STATUS="TCG"
 fi
-SMP="1"
+SMP="8"
 
 # Graphics (serial only for testing)
 CONSOLE="-nographic -serial mon:stdio"

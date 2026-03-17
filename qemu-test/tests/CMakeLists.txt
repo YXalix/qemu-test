@@ -14,6 +14,16 @@ add_executable(test-hugetlb
     src/test_kae.c
 )
 
-set_target_properties(test-hugetlb PROPERTIES
+add_executable(test-hugetlb-stress
+    src/test-hugetlb-stress.c
+    src/test_common.c
+)
+
+add_executable(test-hugetlb-simple
+    src/test_hugetlb_simple.c
+    src/test_common.c
+)
+
+set_target_properties(test-hugetlb test-hugetlb-stress test-hugetlb-simple PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

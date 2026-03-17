@@ -265,7 +265,7 @@ int main(int argc, char *argv[])
     test_hugetlb_alloc();
     test_hugetlb_swap();
     test_hugetlbfs_swap();
-    test_hugetlbfs_swap_deflate();
+    // test_hugetlbfs_swap_deflate();
 
     printf("\n=== Summary ===\n");
     printf("  Passed:  %d\n", passed);

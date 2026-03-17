@@ -52,19 +52,34 @@ qemu-debug:
 	@echo "Starting QEMU with GDB stub on port 1234..."
 	cd $(QEMU_TEST_DIR) && QEMU_DEBUG=1 ./run-qemu.sh $(KERNEL_IMAGE)
 
+# Wrap QEMU in a process group and use a dedicated watchdog to ensure cleanup on timeout
 qemu-test:
 	@if [ "$(QEMU_TIMEOUT)" = "0" ]; then \
 		echo "ERROR: Set QEMU_TIMEOUT (e.g., make qemu-test QEMU_TIMEOUT=60)"; \
 		exit 1; \
 	fi
-	@cd $(QEMU_TEST_DIR) && AUTO_TEST=$(AUTO_TEST) timeout --foreground $(QEMU_TIMEOUT) ./run-qemu.sh $(KERNEL_IMAGE); \
-	EXIT_CODE=$$?; \
-	if [ $$EXIT_CODE -eq 124 ]; then \
-		echo "ERROR: Test timed out after $(QEMU_TIMEOUT) seconds"; \
-		exit 124; \
-	elif [ $$EXIT_CODE -ne 0 ]; then \
-		exit $$EXIT_CODE; \
-	fi
+	@echo "Running QEMU test with $(QEMU_TIMEOUT)s timeout..."
+	@cd $(QEMU_TEST_DIR) && { \
+		PID_FILE=".qemu_test.pid"; rm -f "$$PID_FILE"; \
+		AUTO_TEST=$(AUTO_TEST) timeout --signal=KILL --foreground $(QEMU_TIMEOUT) bash -c "echo \$$\$$ > '$$PID_FILE'; exec ./run-qemu.sh '$(KERNEL_IMAGE)'" & \
+		QEMU_PGID=$$!; \
+		wait $$QEMU_PGID; \
+		EXIT_CODE=$$?; \
+		rm -f "$$PID_FILE"; \
+		if [ $$EXIT_CODE -eq 124 ] || [ $$EXIT_CODE -eq 137 ]; then \
+			echo "ERROR: Test timed out after $(QEMU_TIMEOUT) seconds (exit code: $$EXIT_CODE)"; \
+			echo "Ensuring QEMU is fully terminated..."; \
+			kill -- -$$QEMU_PGID 2>/dev/null || true; \
+			pkill -9 -f "qemu-system-aarch64.*swap.qcow2" 2>/dev/null || true; \
+			sleep 1; \
+			exit 124; \
+		elif [ $$EXIT_CODE -ne 0 ]; then \
+			echo "ERROR: Test failed with exit code $$EXIT_CODE"; \
+			exit $$EXIT_CODE; \
+		else \
+			echo "Test completed successfully!"; \
+		fi; \
+	}
 
 build-swap:
 	@if [ -f $(QEMU_TEST_DIR)/swap.qcow2 ]; then \
