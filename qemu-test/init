@@ -307,7 +307,7 @@ run_auto_tests() {
     local test_count=0
     local pass_count=0
 
-    for test_exe in "$TESTS_DIR"/test-hugetlb-simple; do
+    for test_exe in "$TESTS_DIR"/*; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
             local test_name=$(basename "$test_exe")

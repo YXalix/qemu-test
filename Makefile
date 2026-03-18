@@ -9,12 +9,14 @@ AUTO_TEST ?= 1
 
 .PHONY: all help qemu qemu-kvm qemu-debug build-swap clean clean-swap initrd qemu-test
 
-all: help
+all: kernel
 
 help:
 	@echo "QEMU Hugetlb Swap Test Environment"
 	@echo ""
 	@echo "Available targets:"
+	@echo "  all (default) - Build the kernel (same as 'kernel' target)"
+	@echo "  kernel        - Build kernel in parent directory with -j$(shell nproc)"
 	@echo "  qemu          - Start QEMU VM"
 	@echo "  qemu-kvm      - Start QEMU VM with KVM acceleration"
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
@@ -102,3 +104,7 @@ clean:
 
 clean-swap:
 	rm -f $(QEMU_TEST_DIR)/swap.qcow2
+
+kernel:
+	@echo "Building kernel in $(KERNEL_PATH)..."
+	$(MAKE) -C $(KERNEL_PATH) -j$(shell nproc)

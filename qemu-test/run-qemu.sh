@@ -49,10 +49,10 @@ fi
 VM_MEMORY="1G"
 
 # Huge page configuration
-# Use memfd backend with hugetlb for private anonymous huge pages
-MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,hugetlb=on,share=off"
+# Use memfd backend without hugetlb (let kernel handle hugetlb inside guest)
+MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,hugetlb=off,share=off"
 MACHINE="virt,memory-backend=mem"
-HUGETLB_STATUS="private hugetlb (memfd)"
+HUGETLB_STATUS="standard memory (hugetlb managed by guest)"
 
 # CPU configuration
 if [ "${QEMU_KVM:-}" = "1" ]; then
