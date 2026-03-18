@@ -80,6 +80,7 @@ void test_hugetlb_swap(void)
 {
     void *addr;
     int swpd_before, swpd_after;
+    int free_hp_before, free_hp_after;
 
     printf("\nTest: HugeTLB Swap\n");
 
@@ -97,7 +98,9 @@ void test_hugetlb_swap(void)
     memset(addr, 0xAB, 2 * HPAGE_SIZE_2M);
     PASS("Allocated and touched 4MB");
 
+    free_hp_before = get_free_hugepages();
     swpd_before = get_hugepages_swpd();
+    INFO("Free hugepages before: %d", free_hp_before);
     INFO("HugePages_Swap before: %d", swpd_before);
 
     /* Use trigger_swap_multi to swap both hugepages */
@@ -107,13 +110,33 @@ void test_hugetlb_swap(void)
         return;
     }
 
+    free_hp_after = get_free_hugepages();
     swpd_after = get_hugepages_swpd();
+    INFO("Free hugepages after: %d", free_hp_after);
     INFO("HugePages_Swap after: %d", swpd_after);
 
-    if (swpd_after > swpd_before)
+    if (swpd_after > swpd_before && free_hp_after > free_hp_before)
+        PASS("Swap out verified: %d pages swapped, free hugepages increased by %d",
+             swpd_after - swpd_before, free_hp_after - free_hp_before);
+    else if (swpd_after > swpd_before)
         PASS("Swap out detected (%d hugepages swapped)", swpd_after - swpd_before);
     else
         INFO("Swap may still be pending");
+
+    /* Swapin: access memory to trigger page fault and verify content integrity */
+    if (verify_pattern(addr, 2 * HPAGE_SIZE_2M, 0xAB) == 0)
+        PASS("Swapin content verified: full 4MB pattern 0xAB intact");
+    else
+        FAIL("Swapin content mismatch: data corrupted after swap out/in");
+
+    int free_hp_after_swapin = get_free_hugepages();
+    int swpd_after_swapin = get_hugepages_swpd();
+    INFO("Free hugepages after swapin: %d", free_hp_after_swapin);
+    INFO("HugePages_Swap after swapin: %d", swpd_after_swapin);
+
+    if (swpd_after_swapin < swpd_after)
+        PASS("Swap count decreased after swapin (%d -> %d)",
+             swpd_after, swpd_after_swapin);
 
     free_hugetlb(addr, 2 * HPAGE_SIZE_2M);
     PASS("Memory freed");

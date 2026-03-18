@@ -55,7 +55,7 @@ qemu-debug:
 	cd $(QEMU_TEST_DIR) && QEMU_DEBUG=1 ./run-qemu.sh $(KERNEL_IMAGE)
 
 # Wrap QEMU in a process group and use a dedicated watchdog to ensure cleanup on timeout
-qemu-test:
+qemu-test: initrd
 	@if [ "$(QEMU_TIMEOUT)" = "0" ]; then \
 		echo "ERROR: Set QEMU_TIMEOUT (e.g., make qemu-test QEMU_TIMEOUT=60)"; \
 		exit 1; \

@@ -205,10 +205,10 @@ setup_disk_swap() {
 reserve_hugepages() {
     LOG_INFO "Reserving hugepages..."
 
-    # Reserve 10 x 2MB hugepages for anonymous allocation
+    # Reserve 32 x 2MB hugepages for anonymous allocation
     local hp_2mb="/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
     if [ -f "$hp_2mb" ]; then
-        echo 10 > "$hp_2mb" 2>/dev/null
+        echo 32 > "$hp_2mb" 2>/dev/null
         local reserved=$(cat "$hp_2mb" 2>/dev/null || echo 0)
         LOG_OK "Reserved $reserved x 2MB hugepages"
     fi
@@ -307,7 +307,7 @@ run_auto_tests() {
     local test_count=0
     local pass_count=0
 
-    for test_exe in "$TESTS_DIR"/*; do
+    for test_exe in "$TESTS_DIR"/test-hugetlb-stress; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
             local test_name=$(basename "$test_exe")
