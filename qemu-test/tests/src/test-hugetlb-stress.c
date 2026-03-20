@@ -1,7 +1,9 @@
 /*
  * HugeTLB Swap Concurrent Stress Test
  *
- * Test: Writer Verify + Concurrent Swapin Trigger
+ * Tests:
+ * 1. Anonymous huge pages: Writer Verify + Concurrent Swapin Trigger
+ * 2. HugeTLBFS (file-backed) huge pages: same concurrent stress via /mnt/huge/
  *
  * Design:
  * - Writers: Each writer owns a set of pages, writes pattern and verifies read-back
@@ -19,6 +21,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
 #include <sys/mman.h>
 #include <errno.h>
 
@@ -252,6 +255,88 @@ static void free_test_pages(void)
     }
 }
 
+/* ------------------------------------------------------------------ *
+ * HugeTLBFS helpers                                                   *
+ * ------------------------------------------------------------------ */
+
+#define HUGETLBFS_STRESS_BASE "/mnt/huge/stress"
+
+static char g_hugetlbfs_paths[NR_PAGES][64];
+
+static int alloc_hugetlbfs_pages(void)
+{
+    int i;
+
+    if (access("/mnt/huge", F_OK) != 0) {
+        INFO("hugetlbfs not mounted at /mnt/huge");
+        return -1;
+    }
+
+    for (i = 0; i < NR_PAGES; i++) {
+        int fd;
+        void *addr;
+
+        snprintf(g_hugetlbfs_paths[i], sizeof(g_hugetlbfs_paths[i]),
+                 HUGETLBFS_STRESS_BASE "-%d", i);
+
+        fd = open(g_hugetlbfs_paths[i], O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+        if (fd < 0) {
+            FAIL("Failed to create hugetlbfs file %d: %s", i, strerror(errno));
+            /* Clean up already-allocated pages */
+            while (--i >= 0) {
+                munmap(g_pages[i], HPAGE_SIZE_2M);
+                g_pages[i] = NULL;
+                unlink(g_hugetlbfs_paths[i]);
+            }
+            return -1;
+        }
+
+        if (ftruncate(fd, HPAGE_SIZE_2M) != 0) {
+            FAIL("ftruncate failed for file %d: %s", i, strerror(errno));
+            close(fd);
+            unlink(g_hugetlbfs_paths[i]);
+            while (--i >= 0) {
+                munmap(g_pages[i], HPAGE_SIZE_2M);
+                g_pages[i] = NULL;
+                unlink(g_hugetlbfs_paths[i]);
+            }
+            return -1;
+        }
+
+        addr = mmap(NULL, HPAGE_SIZE_2M, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        close(fd);  /* fd no longer needed after mmap */
+
+        if (addr == MAP_FAILED) {
+            FAIL("mmap failed for hugetlbfs page %d: %s", i, strerror(errno));
+            unlink(g_hugetlbfs_paths[i]);
+            while (--i >= 0) {
+                munmap(g_pages[i], HPAGE_SIZE_2M);
+                g_pages[i] = NULL;
+                unlink(g_hugetlbfs_paths[i]);
+            }
+            return -1;
+        }
+
+        g_pages[i] = addr;
+        memset(addr, 0, HPAGE_SIZE_2M);
+    }
+
+    PASS("Allocated %d hugetlbfs-backed pages (2MB each)", NR_PAGES);
+    return 0;
+}
+
+static void free_hugetlbfs_pages(void)
+{
+    int i;
+    for (i = 0; i < NR_PAGES; i++) {
+        if (g_pages[i]) {
+            munmap(g_pages[i], HPAGE_SIZE_2M);
+            g_pages[i] = NULL;
+        }
+        unlink(g_hugetlbfs_paths[i]);
+    }
+}
+
 static void test_writer_swapin_concurrent(void)
 {
     pthread_t writers[NR_WRITERS];
@@ -326,6 +411,81 @@ static void test_writer_swapin_concurrent(void)
     PASS("Test completed");
 }
 
+static void test_hugetlbfs_writer_swapin_concurrent(void)
+{
+    pthread_t writers[NR_WRITERS];
+    pthread_t swappers[NR_SWAPPERS];
+    pthread_t triggers[NR_TRIGGERS];
+    struct thread_arg wargs[NR_WRITERS];
+    struct thread_arg sargs[NR_SWAPPERS];
+    struct thread_arg targs[NR_TRIGGERS];
+    int pages_per_writer = NR_PAGES / NR_WRITERS;
+    int i;
+
+    printf("\nTest: HugeTLBFS Writer Verify + Concurrent Swapin\n");
+    INFO("Config: %d writers, %d swappers, %d triggers, %d pages, %ds duration",
+         NR_WRITERS, NR_SWAPPERS, NR_TRIGGERS, NR_PAGES, TEST_DURATION);
+
+    if (access("/mnt/huge", F_OK) != 0) {
+        SKIP("hugetlbfs not mounted at /mnt/huge");
+        return;
+    }
+
+    if (get_nr_hugepages() < NR_PAGES) {
+        SKIP("Need at least %d hugepages", NR_PAGES);
+        return;
+    }
+
+    if (alloc_hugetlbfs_pages() < 0)
+        return;
+
+    init_page_meta();
+    reset_stats();
+
+    /* Writer threads - each owns a range of pages */
+    for (i = 0; i < NR_WRITERS; i++) {
+        wargs[i].id = i;
+        wargs[i].start_page = i * pages_per_writer;
+        wargs[i].nr_pages = pages_per_writer;
+        pthread_create(&writers[i], NULL, writer_thread, &wargs[i]);
+    }
+
+    /* Swapper threads */
+    for (i = 0; i < NR_SWAPPERS; i++) {
+        sargs[i].id = i;
+        pthread_create(&swappers[i], NULL, swapper_thread, &sargs[i]);
+    }
+
+    /* Swapin trigger threads */
+    for (i = 0; i < NR_TRIGGERS; i++) {
+        targs[i].id = i;
+        pthread_create(&triggers[i], NULL, swapin_trigger_thread, &targs[i]);
+    }
+
+    INFO("All threads started, running for %d seconds...", TEST_DURATION);
+
+    sleep(TEST_DURATION);
+    atomic_store(&g_stop, 1);
+
+    for (i = 0; i < NR_WRITERS; i++)
+        pthread_join(writers[i], NULL);
+    for (i = 0; i < NR_SWAPPERS; i++)
+        pthread_join(swappers[i], NULL);
+    for (i = 0; i < NR_TRIGGERS; i++)
+        pthread_join(triggers[i], NULL);
+
+    print_stats();
+
+    if (atomic_load(&g_verify_fail) > 0) {
+        FAIL("Detected %lu verification failures", atomic_load(&g_verify_fail));
+    } else {
+        PASS("All write+verify cycles completed successfully");
+    }
+
+    free_hugetlbfs_pages();
+    PASS("Test completed");
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc;
@@ -343,6 +503,7 @@ int main(int argc, char *argv[])
     srand(time(NULL));
 
     test_writer_swapin_concurrent();
+    test_hugetlbfs_writer_swapin_concurrent();
 
     printf("\n=== Summary ===\n");
     printf("  Passed:  %d\n", passed);
