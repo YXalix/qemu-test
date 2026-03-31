@@ -2,13 +2,12 @@
 #define TEST_COMMON_H
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/mman.h>
+#include <errno.h>
 
-#define HPAGE_SIZE_2M (2 * 1024 * 1024)
-
-/* Simple counters */
+/* Test result counters */
 extern int passed;
 extern int failed;
 extern int skipped;
@@ -18,25 +17,7 @@ extern int skipped;
 #define SKIP(fmt, ...) do { skipped++; printf("  [SKIP] " fmt "\n", ##__VA_ARGS__); } while(0)
 #define INFO(fmt, ...) do { printf("  [INFO] " fmt "\n", ##__VA_ARGS__); } while(0)
 
-/* Utility functions */
-int get_nr_hugepages(void);
-int get_free_hugepages(void);
-int set_nr_hugepages(int count);
-unsigned long get_vmswap(void);
-int get_hugepages_swpd(void);
-int open_swap_pages(void);
-void *alloc_hugetlb(size_t size);
-void free_hugetlb(void *addr, size_t size);
-int verify_pattern(void *addr, size_t len, unsigned char pattern);
-int trigger_swap(void *addr, size_t offset);
-int trigger_swap_multi(void **addrs, int count);
-
-/* Test functions */
-void test_etmem_config(void);
-void test_swap_interface(void);
-void test_hugetlb_alloc(void);
-void test_hugetlb_swap(void);
-void test_hugetlbfs_swap(void);
-void test_hugetlbfs_double_mmap(void);
+/* Test entry point - to be implemented by specific test files */
+void run_tests(void);
 
 #endif

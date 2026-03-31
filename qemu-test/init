@@ -1,14 +1,12 @@
 #!/bin/sh
-# Init script for hugetlb swap testing
-# Organized with functions for better maintainability
+# Init script for QEMU E2E testing
+# Basic skeleton - minimal test environment
 
 #==========================================
 # Configuration
 #==========================================
-HUGETLB_MOUNT="/mnt/huge"
-ZRAM_SIZE="536870912"  # 512MB
-MODULES_DIR="/lib/modules"
 TESTS_DIR="/tests"
+MODULES_DIR="/lib/modules"
 
 #==========================================
 # Helper Functions
@@ -30,30 +28,6 @@ LOG_ERROR() {
     echo " [ERROR] $1"
 }
 
-# Mount cgroup filesystem
-mount_cgroup() {
-    LOG_INFO "Mounting cgroup filesystem..."
-
-    mkdir -p /sys/fs/cgroup
-    mount -t tmpfs none /sys/fs/cgroup
-
-    # Mount cgroup v1 with memory controller
-    mkdir -p /sys/fs/cgroup/memory
-    mount -t cgroup -o memory cgroup /sys/fs/cgroup/memory 2>/dev/null || {
-        LOG_WARN "cgroup v1 memory controller not available"
-    }
-
-    # Mount cgroup v1 with hugetlb controller (for huge page limits)
-    mkdir -p /sys/fs/cgroup/hugetlb
-    mount -t cgroup -o hugetlb cgroup /sys/fs/cgroup/hugetlb 2>/dev/null || {
-        LOG_WARN "cgroup v1 hugetlb controller not available"
-        return 1
-    }
-
-    LOG_OK "cgroup controllers mounted"
-    return 0
-}
-
 # Mount essential filesystems
 mount_filesystems() {
     LOG_INFO "Mounting filesystems..."
@@ -71,228 +45,49 @@ mount_filesystems() {
     LOG_OK "Filesystems mounted"
 }
 
-# Mount hugetlbfs for hugepage testing
-mount_hugetlbfs() {
-    LOG_INFO "Mounting hugetlbfs..."
-
-    mkdir -p "$HUGETLB_MOUNT"
-
-    if mount -t hugetlbfs -o pagesize=2M none "$HUGETLB_MOUNT" 2>/dev/null; then
-        LOG_OK "Hugetlbfs mounted (2MB pages)"
-    elif mount -t hugetlbfs none "$HUGETLB_MOUNT" 2>/dev/null; then
-        LOG_OK "Hugetlbfs mounted (default)"
-    else
-        LOG_WARN "Failed to mount hugetlbfs"
-    fi
-}
-
-# Load a kernel module with fallback to insmod
-# Usage: load_module <module_name> [module_params...]
-load_module() {
-    local mod="$1"
-    shift
-    local params="$*"
-
-    if modprobe "$mod" $params 2>/dev/null || \
-       insmod "$MODULES_DIR/${mod}.ko" $params 2>/dev/null; then
-        LOG_OK "Loaded: $mod"
-        return 0
-    fi
-    return 1
-}
-
-# Load multiple modules, log summary
-# Usage: load_modules_group <group_name> <module1> [module2...]
-load_modules_group() {
-    local group="$1"
-    shift
-    local mod
-    local count=0
-
-    LOG_INFO "Loading $group..."
-    for mod in "$@"; do
-        if load_module "$mod"; then
-            loaded=$((loaded + 1))
-            count=$((count + 1))
-        fi
-    done
-    return $count
-}
-
-# Load kernel modules from /lib/modules
+# Load kernel modules
 load_modules() {
     LOG_INFO "Loading kernel modules..."
 
     local loaded=0
-    local failed=0
 
-    # Nvme driver (for swap disk support)
-    load_modules_group "NVMe driver" \
-        crc64 crc64-rocksoft t10-pi nvme-core nvme
+    # NVMe driver (for block device support)
+    for mod in crc64 crc64-rocksoft t10-pi nvme-core nvme; do
+        if modprobe "$mod" 2>/dev/null || \
+           insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
+            loaded=$((loaded + 1))
+        fi
+    done
 
-    # Virtio drivers (for virtio-blk support)
-    load_modules_group "virtio drivers" \
-        virtio_ring virtio virtio_blk \
-        virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio
-
-    # Core hugetlb swap modules
-    load_modules_group "hugetlb swap modules" \
-        etmem_scan etmem_swap zram
-
-    # KAE (Kunpeng Acceleration Engine) - hisi_zip only
-    LOG_INFO "Loading KAE modules..."
-    load_modules_group "KAE dependencies" \
-        uacce hisi_qm
-
-    # KAE ZIP requires Hisilicon hardware -  uacce_mode=2 pf_q_num=256
-    load_module hisi_zip uacce_mode=2 pf_q_num=256
+    # Virtio drivers
+    for mod in virtio_ring virtio virtio_blk virtio_pci; do
+        if modprobe "$mod" 2>/dev/null || \
+           insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
+            loaded=$((loaded + 1))
+        fi
+    done
 
     LOG_INFO "Modules: $loaded loaded"
-}
-
-# Setup zram swap device
-setup_zram() {
-    LOG_INFO "Setting up zram swap..."
-
-    local zram_dev=""
-
-    # Prefer zram0 if available and unused (disksize == 0)
-    if [ -d /sys/block/zram0 ]; then
-        local disksize=$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0)
-        if [ "$disksize" = "0" ]; then
-            zram_dev=0
-            LOG_INFO "Using unused zram0"
-        fi
-    fi
-
-    # Create new device if zram0 not available
-    if [ -z "$zram_dev" ] && [ -f /sys/class/zram-control/hot_add ]; then
-        # Create new zram device
-        zram_dev=$(cat /sys/class/zram-control/hot_add 2>/dev/null)
-        LOG_INFO "Created zram${zram_dev} via hot_add"
-    fi
-
-    if [ -n "$zram_dev" ]; then
-        echo lz4 > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || \
-            echo lzo > /sys/block/zram${zram_dev}/comp_algorithm 2>/dev/null || true
-        echo "$ZRAM_SIZE" > /sys/block/zram${zram_dev}/disksize 2>/dev/null
-
-        if mkswap /dev/zram${zram_dev} 2>/dev/null && swapon /dev/zram${zram_dev} 2>/dev/null; then
-            LOG_OK "Zram swap enabled on zram${zram_dev}"
-            return 0
-        else
-            echo 0 > /sys/block/zram${zram_dev}/disksize 2>/dev/null || true
-        fi
-    fi
-
-    LOG_WARN "Zram swap setup failed"
-    return 1
-}
-
-# Setup disk-based swap if available
-setup_disk_swap() {
-    if [ -b /dev/nvme0n1 ]; then
-        LOG_INFO "Setting up disk swap..."
-        if mkswap /dev/nvme0n1 2>/dev/null && swapon /dev/nvme0n1 2>/dev/null; then
-            LOG_OK "Disk swap enabled"
-            return 0
-        fi
-    fi
-    return 1
-}
-
-# Reserve hugepages for anonymous hugetlb testing
-reserve_hugepages() {
-    LOG_INFO "Reserving hugepages..."
-
-    # Reserve 32 x 2MB hugepages for anonymous allocation
-    local hp_2mb="/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
-    if [ -f "$hp_2mb" ]; then
-        echo 32 > "$hp_2mb" 2>/dev/null
-        local reserved=$(cat "$hp_2mb" 2>/dev/null || echo 0)
-        LOG_OK "Reserved $reserved x 2MB hugepages"
-    fi
-}
-
-# Enable ETMEM kernel swap
-enable_etmem() {
-    LOG_INFO "Enabling ETMEM..."
-
-    if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
-        echo 1 > /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null && \
-            LOG_OK "ETMEM enabled" || \
-            LOG_WARN "Failed to enable ETMEM"
-    else
-        LOG_WARN "ETMEM not available"
-    fi
 }
 
 # Print system status information
 print_status() {
     echo ""
     echo "=========================================="
-    echo "Hugetlb Swap Test Environment"
+    echo "QEMU E2E Test Environment"
     echo "=========================================="
     echo "Kernel: $(uname -r)"
     echo "Architecture: $(uname -m)"
     echo ""
 
-    # Hugepage info
-    echo "HugeTLB Information:"
-    if [ -d /sys/kernel/mm/hugepages ]; then
-        for hp in /sys/kernel/mm/hugepages/hugepages-*; do
-            if [ -d "$hp" ]; then
-                local name=$(basename "$hp")
-                local nr=$(cat "$hp/nr_hugepages" 2>/dev/null || echo "N/A")
-                local free=$(cat "$hp/free_hugepages" 2>/dev/null || echo "N/A")
-                printf "  %-20s reserved=%s, free=%s\n" "$name" "$nr" "$free"
-            fi
-        done
-    else
-        echo "  Hugepage support not available"
-    fi
-
     # Block devices
-    echo ""
     echo "Block Devices:"
-    ls -la /sys/class/block/ 2>/dev/null | grep -v "^total" | sed 's/^/  /' || echo "  No block devices found"
-
-    # Swap info
-    echo ""
-    echo "Swap Information:"
-    # Check if swap exists (skip header line)
-    swap_lines=$(grep -c "^/dev" /proc/swaps 2>/dev/null || echo 0)
-    if [ "$swap_lines" -gt 0 ]; then
-        sed 's/^/  /' /proc/swaps | tail -n +2
-    else
-        echo "  No swap configured"
-    fi
-
-    # ETMEM status
-    echo ""
-    echo "ETMEM Status:"
-    if [ -f /sys/kernel/mm/swap/kernel_swap_enable ]; then
-        local status=$(cat /sys/kernel/mm/swap/kernel_swap_enable 2>/dev/null)
-        echo "  kernel_swap_enable: $status"
-    else
-        echo "  Not available"
-    fi
+    ls /sys/class/block/ 2>/dev/null | sed 's/^/  /' || echo "  No block devices found"
 
     echo ""
     echo "Test commands:"
-    echo "  test-etmem          - ETMEM interface tests"
+    echo "  Run tests from $TESTS_DIR"
     echo ""
-}
-
-# Wait for system to be ready
-wait_for_system() {
-    LOG_INFO "Waiting for system to settle..."
-
-    if grep -q "^/dev" /proc/swaps 2>/dev/null; then
-        LOG_OK "Swap is ready"
-    else
-        LOG_WARN "Swap not configured"
-    fi
 }
 
 # Run all tests in /tests directory
@@ -307,7 +102,7 @@ run_auto_tests() {
     local test_count=0
     local pass_count=0
 
-    for test_exe in "$TESTS_DIR"/test-hugetlb-stress; do
+    for test_exe in "$TESTS_DIR"/*; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
             local test_name=$(basename "$test_exe")
@@ -324,8 +119,7 @@ run_auto_tests() {
     done
 
     if [ $test_count -eq 0 ]; then
-        LOG_ERROR "No tests found in $TESTS_DIR"
-        test_failed=1
+        LOG_WARN "No tests found in $TESTS_DIR"
     fi
 
     echo ""
@@ -338,11 +132,6 @@ run_auto_tests() {
     fi
     echo "=========================================="
 
-    # Print final HugePages status
-    echo ""
-    echo "Final HugePages Status:"
-    grep "^Huge" /proc/meminfo
-    free -h
     return $test_failed
 }
 
@@ -360,27 +149,12 @@ power_off() {
 main() {
     # Mount filesystems
     mount_filesystems
-    mount_hugetlbfs
-    mount_cgroup
 
     # Load modules
     load_modules
 
-    # Reserve hugepages for testing
-    reserve_hugepages
-
-    # Setup swap
-    setup_zram
-    setup_disk_swap
-
-    # Enable features
-    enable_etmem
-
     # Show status
     print_status
-
-    # Wait for system ready
-    wait_for_system
 
     # Check for auto-test mode
     if grep -q "auto_test" /proc/cmdline 2>/dev/null || [ "$AUTO_TEST" = "1" ]; then

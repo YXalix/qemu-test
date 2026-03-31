@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(hugetlb-tests C)
+project(qemu-e2e-tests C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_C_STANDARD 11)
@@ -8,32 +8,13 @@ set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 include_directories(src)
 
-add_executable(test-hugetlb
+# Example test executable - minimal skeleton
+add_executable(test-example
     src/main.c
     src/test_common.c
-    src/test_kae.c
+    src/test_example.c
 )
 
-add_executable(test-hugetlb-stress
-    src/test-hugetlb-stress.c
-    src/test_common.c
-)
-
-add_executable(test-hugetlb-simple
-    src/test_hugetlb_simple.c
-    src/test_common.c
-)
-
-add_executable(test-hugetlb-race
-    src/test-hugetlb-race.c
-    src/test_common.c
-)
-
-add_executable(test-hugetlbfs-swapoff
-    src/test_hugetlbfs_swapoff.c
-    src/test_common.c
-)
-
-set_target_properties(test-hugetlb test-hugetlb-stress test-hugetlb-simple test-hugetlb-race test-hugetlbfs-swapoff PROPERTIES
+set_target_properties(test-example PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

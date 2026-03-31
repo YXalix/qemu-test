@@ -28,7 +28,7 @@ mkdir -p "${ROOTFS_DIR}"
 cd "${ROOTFS_DIR}"
 
 # Create directories
-mkdir -p bin sbin lib lib64 usr/bin usr/sbin proc sys dev tmp mnt/huge \
+mkdir -p bin sbin lib lib64 usr/bin usr/sbin proc sys dev tmp mnt \
          etc/init.d var/run root
 
 # Build BusyBox if needed
@@ -100,17 +100,11 @@ copy_modules() {
     done
 }
 
-# Nvme and related modules for disk swap support
+# NVMe support
 copy_modules crc64 crc64-rocksoft t10-pi nvme-core nvme
 
-# Core modules
-copy_modules zram etmem_scan etmem_swap
-
 # Virtio drivers
-copy_modules virtio virtio_ring virtio_blk virtio_pci_modern_dev virtio_pci_legacy_dev virtio_pci virtio_mmio
-
-# KAE (Kunpeng Acceleration Engine) modules - hisi_zip only
-copy_modules uacce hisi_qm hisi_zip
+copy_modules virtio virtio_ring virtio_blk virtio_pci
 
 # Build and copy tests
 echo "Building tests..."

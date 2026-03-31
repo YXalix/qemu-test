@@ -1,5 +1,5 @@
 #!/bin/bash
-# QEMU launch script for hugetlb swap testing
+# QEMU launch script for E2E testing
 
 set -e
 
@@ -12,7 +12,7 @@ KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../../..}"
 DEFAULT_KERNEL="${KERNEL_PATH}/arch/arm64/boot/Image"
 KERNEL="${1:-$DEFAULT_KERNEL}"
 INITRD="${SCRIPT_DIR}/initrd.img"
-DISK="${SCRIPT_DIR}/swap.qcow2"
+DISK="${SCRIPT_DIR}/disk.qcow2"
 
 # Default kernel if not provided
 if [ ! -f "$KERNEL" ]; then
@@ -47,12 +47,8 @@ fi
 
 # Memory configuration - 1GB for testing
 VM_MEMORY="1G"
-
-# Huge page configuration
-# Use memfd backend without hugetlb (let kernel handle hugetlb inside guest)
-MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,hugetlb=off,share=off"
+MEMORY_BACKEND="-object memory-backend-memfd,id=mem,size=$VM_MEMORY,share=off"
 MACHINE="virt,memory-backend=mem"
-HUGETLB_STATUS="standard memory (hugetlb managed by guest)"
 
 # CPU configuration
 if [ "${QEMU_KVM:-}" = "1" ]; then
@@ -87,30 +83,20 @@ if [ "${AUTO_TEST:-}" = "1" ]; then
     AUTO_TEST_FLAG=" auto_test"
 fi
 
-# KAE PCI Passthrough (hisi_zip)
-KAE_OPTS=""
-if [ -n "${KAE:-}" ]; then
-    if [ ! -e "/sys/bus/pci/devices/0000:${KAE}" ]; then
-        echo "ERROR: KAE device ${KAE} not found"
-        exit 1
-    fi
-    KAE_OPTS="-device vfio-pci,host=${KAE}"
-fi
+# PCI device passthrough (optional)
+# Usage: QEMU_OPTS="-device vfio-pci,host=XX:XX.X" ./run-qemu.sh
 
 echo "=========================================="
-echo "QEMU Hugetlb Swap Test Environment"
+echo "QEMU E2E Test Environment"
 echo "=========================================="
 echo "  Kernel: $KERNEL"
 echo "  Initrd: $INITRD"
 if [ -n "$DISK_OPT" ]; then
-    echo "  Disk:   $DISK (512MB NVMe SSD swap)"
+    echo "  Disk:   $DISK (512MB NVMe block device)"
 fi
-echo "  Memory: $VM_MEMORY ($HUGETLB_STATUS)"
+echo "  Memory: $VM_MEMORY"
 echo "  CPUs: $SMP"
 echo "  Accelerator: $ACCEL_STATUS"
-if [ -n "${KAE:-}" ]; then
-    echo "  KAE: PCI passthrough $KAE"
-fi
 echo "  Auto-test: ${AUTO_TEST:-0}"
 if [ -n "$QEMU_DEBUG" ]; then
     echo "  Debug: enabled (GDB port 1234)"
@@ -149,7 +135,7 @@ $QEMU_BIN \
     -initrd "$INITRD" \
     -append "console=ttyAMA0 root=/dev/ram0 rw=1 init=/init loglevel=8${AUTO_TEST_FLAG}" \
     $DISK_OPT \
-    $KAE_OPTS \
+    ${QEMU_OPTS:-} \
     $CONSOLE \
     $OPTIONS \
     $DEBUG_OPTS
