@@ -8,13 +8,25 @@ set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 include_directories(src)
 
-# Example test executable - minimal skeleton
+# Example test executable
 add_executable(test-example
     src/main.c
     src/test_common.c
     src/test_example.c
 )
 
-set_target_properties(test-example PROPERTIES
+# ublk test executable
+add_executable(test-ublk
+    src/main.c
+    src/test_common.c
+    src/test_ublk.c
+)
+
+# ublk daemon
+add_executable(ublk-daemon
+    src/ublk_daemon.c
+)
+
+set_target_properties(test-example test-ublk ublk-daemon PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )

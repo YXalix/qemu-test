@@ -1,6 +1,5 @@
 #!/bin/sh
 # Init script for QEMU E2E testing
-# Basic skeleton - minimal test environment
 
 #==========================================
 # Configuration
@@ -51,7 +50,7 @@ load_modules() {
 
     local loaded=0
 
-    # NVMe driver (for block device support)
+    # NVMe support
     for mod in crc64 crc64-rocksoft t10-pi nvme-core nvme; do
         if modprobe "$mod" 2>/dev/null || \
            insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
@@ -60,12 +59,21 @@ load_modules() {
     done
 
     # Virtio drivers
-    for mod in virtio_ring virtio virtio_blk virtio_pci; do
+    for mod in virtio virtio_ring virtio_blk virtio_pci; do
         if modprobe "$mod" 2>/dev/null || \
            insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
             loaded=$((loaded + 1))
         fi
     done
+
+    # ublk driver
+    if modprobe ublk 2>/dev/null || \
+       insmod "$MODULES_DIR/ublk_drv.ko" 2>/dev/null; then
+        LOG_OK "ublk module loaded"
+        loaded=$((loaded + 1))
+    else
+        LOG_WARN "ublk module not found"
+    fi
 
     LOG_INFO "Modules: $loaded loaded"
 }
@@ -83,6 +91,16 @@ print_status() {
     # Block devices
     echo "Block Devices:"
     ls /sys/class/block/ 2>/dev/null | sed 's/^/  /' || echo "  No block devices found"
+
+    # ublk status
+    echo ""
+    echo "ublk Status:"
+    if [ -e /dev/ublk-control ]; then
+        echo "  ublk-control: available"
+        ls /dev/ublkb* 2>/dev/null | sed 's/^/  /' || echo "  No ublk devices"
+    else
+        echo "  ublk-control: not available"
+    fi
 
     echo ""
     echo "Test commands:"

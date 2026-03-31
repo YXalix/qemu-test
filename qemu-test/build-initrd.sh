@@ -106,6 +106,9 @@ copy_modules crc64 crc64-rocksoft t10-pi nvme-core nvme
 # Virtio drivers
 copy_modules virtio virtio_ring virtio_blk virtio_pci
 
+# ublk driver
+copy_modules ublk_drv
+
 # Build and copy tests
 echo "Building tests..."
 mkdir -p tests
