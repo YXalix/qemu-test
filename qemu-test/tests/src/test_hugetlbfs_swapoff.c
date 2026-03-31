@@ -39,7 +39,7 @@ static int enable_swap(void)
 {
     if (system("mkswap " SWAP_DEVICE " 2>/dev/null") != 0)
         return -1;
-    if (system("swapon " SWAP_DEVICE " 2>/dev/null") != 0)
+    if (system("swapon " SWAP_DEVICE " -p 2 2>/dev/null") != 0)
         return -1;
     return 0;
 }
@@ -54,7 +54,8 @@ void test_hugetlbfs_swapoff(void)
 {
     int fd;
     void *addr;
-    int swpd_before, swpd_after;
+    int swpd_before, swpd_after, swpd_off;
+	int free_after, free_off;
     const char *test_file = "/mnt/huge/test_swapoff";
 
     printf("\nTest: hugetlbfs Swap + Swapoff\n");
@@ -99,8 +100,8 @@ void test_hugetlbfs_swapoff(void)
     /* Swap out */
     swpd_before = get_hugepages_swpd();
     trigger_swap(addr, 0);
-    usleep(100000);
     swpd_after = get_hugepages_swpd();
+	free_after = get_free_hugepages();
     INFO("HugePages_Swap: %d -> %d", swpd_before, swpd_after);
 
     if (swpd_after > swpd_before)
@@ -108,16 +109,105 @@ void test_hugetlbfs_swapoff(void)
 
     /* Try swapoff - this is the key test */
     INFO("Attempting swapoff...");
-    if (disable_swap() != 0) {
-        FAIL("swapoff failed (expected without hugetlb swapoff support)");
-    } else {
-        PASS("swapoff succeeded");
-    }
+
+	disable_swap();
+	INFO("Swapoff issued, checking status...");
+	system("free -h");
+	if (is_swap_active()) {
+		FAIL("Swapoff failed, swap still active");
+	} else {
+		PASS("Swapoff successful, swap inactive");
+	}
+	swpd_off = get_hugepages_swpd();
+	free_off = get_free_hugepages();
+	INFO("HugePages_Swap swapoff: %d -> %d", swpd_after, swpd_off);
+	INFO("HugePages_Free swapoff: %d -> %d", free_after, free_off);
+	if (swpd_off == 0)
+		PASS("All hugetlbfs pages unswapped after swapoff");
+	else
+		FAIL("Some hugetlbfs pages still swapped after swapoff");
 
     /* Cleanup: re-enable swap, unmap, cleanup */
     enable_swap();
     munmap(addr, HPAGE_SIZE);
     unlink(test_file);
+    PASS("Cleanup complete");
+}
+
+/* Test: anonymous hugetlb swap out then swapoff */
+void test_anon_hugetlb_swapoff(void)
+{
+    void *addr;
+    int swpd_before, swpd_after, swpd_off;
+    int free_after, free_off;
+
+    printf("\nTest: Anonymous HugeTLB Swap + Swapoff\n");
+
+    if (get_nr_hugepages() < 2) {
+        SKIP("Need at least 2 hugepages");
+        return;
+    }
+
+    if (!is_swap_active() && enable_swap() < 0) {
+        SKIP("Failed to enable swap");
+        return;
+    }
+    PASS("Swap is active");
+
+    /* Allocate anonymous hugetlb page */
+    addr = mmap(NULL, HPAGE_SIZE, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+    if (addr == MAP_FAILED) {
+        FAIL("Failed to allocate anonymous hugetlb page");
+        return;
+    }
+    PASS("Allocated anonymous hugetlb page at %p", addr);
+
+    /* Fill with pattern */
+    memset(addr, 0xCD, HPAGE_SIZE);
+    PASS("Memory filled with pattern 0xCD");
+
+    /* Swap out */
+    swpd_before = get_hugepages_swpd();
+    trigger_swap(addr, 0);
+    swpd_after = get_hugepages_swpd();
+    free_after = get_free_hugepages();
+    INFO("HugePages_Swap: %d -> %d", swpd_before, swpd_after);
+
+    if (swpd_after > swpd_before)
+        PASS("Anonymous huge page swapped out");
+    else
+        FAIL("Anonymous huge page NOT swapped out");
+
+    /* Try swapoff - this is the key test */
+    INFO("Attempting swapoff...");
+
+    disable_swap();
+    INFO("Swapoff issued, checking status...");
+    system("free -h");
+    if (is_swap_active()) {
+        FAIL("Swapoff failed, swap still active");
+    } else {
+        PASS("Swapoff successful, swap inactive");
+    }
+    swpd_off = get_hugepages_swpd();
+    free_off = get_free_hugepages();
+    INFO("HugePages_Swap swapoff: %d -> %d", swpd_after, swpd_off);
+    INFO("HugePages_Free swapoff: %d -> %d", free_after, free_off);
+    if (swpd_off == 0)
+        PASS("All anonymous hugetlb pages unswapped after swapoff");
+    else
+        FAIL("Some anonymous hugetlb pages still swapped after swapoff");
+
+    /* Verify data integrity after swapoff */
+    if (verify_pattern(addr, HPAGE_SIZE, 0xCD) == 0)
+        PASS("Data integrity verified after swapoff");
+    else
+        FAIL("Data corruption detected after swapoff");
+
+    /* Cleanup: re-enable swap, unmap */
+    enable_swap();
+    munmap(addr, HPAGE_SIZE);
     PASS("Cleanup complete");
 }
 
@@ -129,6 +219,7 @@ int main(int argc, char *argv[])
     printf("Kernel: "); fflush(stdout); system("uname -r");
 
     test_hugetlbfs_swapoff();
+    test_anon_hugetlb_swapoff();
 
     printf("\n=== Summary ===\n");
     printf("Passed: %d, Failed: %d, Skipped: %d\n", passed, failed, skipped);

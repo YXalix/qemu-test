@@ -37,5 +37,6 @@ void test_swap_interface(void);
 void test_hugetlb_alloc(void);
 void test_hugetlb_swap(void);
 void test_hugetlbfs_swap(void);
+void test_hugetlbfs_double_mmap(void);
 
 #endif
