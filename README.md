@@ -66,6 +66,20 @@ void run_tests(void)
 
 Update `CMakeLists.txt` to build your test.
 
+## VSCode Configuration
+
+For Rust development with `ublk-daemon`, add to `.vscode/settings.json`:
+
+```json
+{
+    "rust-analyzer.linkedProjects": [
+        "testing/ublk-daemon/Cargo.toml"
+    ]
+}
+```
+
+This tells rust-analyzer where to find the Rust project when VSCode is opened at the kernel directory.
+
 ## Kernel Debugging
 
 Terminal 1:

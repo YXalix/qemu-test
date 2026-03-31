@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "test_common.h"
 
 int main(int argc, char *argv[])

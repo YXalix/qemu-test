@@ -7,6 +7,7 @@ qemu-test/initrd.img
 qemu-test/tests/build/
 qemu-test/tests/.*
 qemu-test/tests/compile_commands.json
+ublk-daemon/target
 
 # Build artifacts
 **.cmd
