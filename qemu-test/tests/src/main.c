@@ -249,6 +249,89 @@ void test_hugetlbfs_swap(void)
     test_hugetlbfs_swap_internal("hugetlbfs-based Swap", "/mnt/huge/test_swap");
 }
 
+/* Test: OVS-like double mmap + mlock pattern (no swap) */
+void test_hugetlbfs_double_mmap(void)
+{
+    int fd;
+    void *addr1, *addr2;
+    unsigned char *p1, *p2;
+
+    printf("\nTest: hugetlbfs Double Mmap + Mlock (OVS-like)\n");
+
+    if (access("/mnt/huge", F_OK) != 0) {
+        SKIP("hugetlbfs not mounted");
+        return;
+    }
+
+    if (get_nr_hugepages() < 1) {
+        SKIP("Need 1 hugepage");
+        return;
+    }
+
+    fd = open("/mnt/huge/test_double", O_CREAT | O_RDWR, 0644);
+    if (fd < 0 || ftruncate(fd, HPAGE_SIZE_2M) != 0) {
+        FAIL("Failed to create file");
+        if (fd >= 0) close(fd);
+        unlink("/mnt/huge/test_double");
+        return;
+    }
+
+    /* First mmap */
+    addr1 = mmap(NULL, HPAGE_SIZE_2M, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr1 == MAP_FAILED) {
+        FAIL("First mmap failed");
+        close(fd);
+        unlink("/mnt/huge/test_double");
+        return;
+    }
+
+    /* Second mmap of same file (like OVS mempool shared access) */
+    addr2 = mmap(NULL, HPAGE_SIZE_2M, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if (addr2 == MAP_FAILED) {
+        FAIL("Second mmap failed");
+        munmap(addr1, HPAGE_SIZE_2M);
+        unlink("/mnt/huge/test_double");
+        return;
+    }
+    PASS("Two mappings of same file: %p, %p", addr1, addr2);
+
+    /* Fault first mapping */
+    p1 = addr1;
+    memset(p1, 0xAA, HPAGE_SIZE_2M);
+    PASS("First mapping faulted and filled");
+
+    /* Mlock first mapping (prevent swap, like OVS does) */
+    if (mlock(addr1, HPAGE_SIZE_2M) == 0)
+        PASS("First mapping mlocked");
+    else
+        INFO("mlock failed (non-root?)");
+
+    /* Fault second mapping - should see shared data */
+    p2 = addr2;
+    if (p2[0] == 0xAA && p2[HPAGE_SIZE_2M - 1] == 0xAA)
+        PASS("Second mapping sees shared data");
+
+    /* Mlock second mapping */
+    if (mlock(addr2, HPAGE_SIZE_2M) == 0)
+        PASS("Second mapping mlocked");
+
+    /* Verify shared memory consistency */
+    memset(p2, 0xBB, HPAGE_SIZE_2M);
+    if (p1[0] == 0xBB && p1[HPAGE_SIZE_2M - 1] == 0xBB)
+        PASS("Shared mapping consistency verified");
+    else
+        FAIL("Shared mapping data inconsistency");
+
+    /* Cleanup */
+    munlock(addr1, HPAGE_SIZE_2M);
+    munlock(addr2, HPAGE_SIZE_2M);
+    munmap(addr1, HPAGE_SIZE_2M);
+    munmap(addr2, HPAGE_SIZE_2M);
+    unlink("/mnt/huge/test_double");
+    PASS("Cleanup complete");
+}
+
 void test_hugetlbfs_swap_deflate(void)
 {
     int kae_status;
@@ -288,6 +371,7 @@ int main(int argc, char *argv[])
     test_hugetlb_alloc();
     test_hugetlb_swap();
     test_hugetlbfs_swap();
+    test_hugetlbfs_double_mmap();
     // test_hugetlbfs_swap_deflate();
 
     printf("\n=== Summary ===\n");
