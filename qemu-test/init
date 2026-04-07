@@ -102,9 +102,19 @@ print_status() {
         echo "  ublk-control: not available"
     fi
 
+    # Test data files
+    echo ""
+    echo "Test Data Files:"
+    if [ -f /data/testfile1.bin ]; then
+        ls -lh /data/testfile*.bin 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
+    else
+        echo "  No test files created yet"
+    fi
+
     echo ""
     echo "Test commands:"
     echo "  Run tests from $TESTS_DIR"
+    echo "  ublk add -t loop -f /data/testfile1.bin -n 0  # Create ublk device"
     echo ""
 }
 
@@ -160,6 +170,60 @@ power_off() {
     poweroff -f
 }
 
+# Check ublk devices and exit if not available
+check_ublk_devices() {
+    LOG_INFO "Checking ublk devices..."
+
+    # Check if ublk-control exists
+    if [ ! -e /dev/ublk-control ]; then
+        LOG_ERROR "ublk-control device not found (/dev/ublk-control)"
+        LOG_ERROR "ublk driver may not be loaded or kernel doesn't support ublk"
+        power_off
+    fi
+
+    # Check if ublkb devices exist
+    if ! ls /dev/ublkb* 1>/dev/null 2>&1; then
+        LOG_ERROR "No ublk block devices found (/dev/ublkb*)"
+        LOG_ERROR "Failed to create ublk devices - check ublk module and setup"
+        power_off
+    fi
+
+    LOG_OK "ublk devices available: $(ls /dev/ublkb* 2>/dev/null | tr '\n' ' ')"
+}
+
+# Create test data files for COWCACHE
+# Creates 3 identical files for COWCACHE/ublk testing
+setup_testdata() {
+    LOG_INFO "Setting up test data files..."
+
+    mkdir -p /data
+
+    # Create 3 identical 10MB test files using a loop
+    if [ ! -f /data/testfile1.bin ]; then
+        dd if=/dev/urandom of=/data/seed.bin bs=1M count=10 2>/dev/null
+        for i in 1 2 3; do
+            cp /data/seed.bin /data/testfile${i}.bin
+        done
+        rm /data/seed.bin
+        LOG_OK "Created testfile[1-3].bin (10MB each, identical content)"
+    else
+        LOG_OK "Test files already exist"
+    fi
+
+    # Show file info
+    ls -lh /data/testfile*.bin 2>/dev/null | sed 's/^/  /'
+
+    # Create ublk loop devices for test files
+    if [ -e /dev/ublk-control ]; then
+        LOG_INFO "Creating ublk loop devices..."
+        for i in 1 2 3; do
+            ublk add -t loop -f /data/testfile${i}.bin -n $((i-1)) 2>/dev/null || \
+                LOG_WARN "Failed to create ublk device for testfile${i}.bin"
+        done
+        LOG_OK "ublk devices created"
+    fi
+}
+
 #==========================================
 # Main Execution
 #==========================================
@@ -170,6 +234,12 @@ main() {
 
     # Load modules
     load_modules
+
+    # Setup test data files
+    setup_testdata
+
+    # Check ublk devices exist
+    check_ublk_devices
 
     # Show status
     print_status

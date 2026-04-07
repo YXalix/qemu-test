@@ -8,6 +8,7 @@ ROOTFS_DIR="${SCRIPT_DIR}/rootfs"
 INITRD_FILE="${SCRIPT_DIR}/initrd.img"
 BUSYBOX_VERSION="1.36.1"
 BUSYBOX_DIR="${SCRIPT_DIR}/busybox/busybox-${BUSYBOX_VERSION}"
+UBLKSRV_DIR="${SCRIPT_DIR}/ublksrv"
 
 # Auto-detect kernel directory: use KERNEL_PATH env var, or detect relative to script
 KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../..}"
@@ -63,6 +64,42 @@ for link in $(find . -type l); do
         ln -sf "$(basename "$target")" "$link"
     fi
 done
+
+cd "${ROOTFS_DIR}"
+
+# Ensure /usr/bin/sed exists (ublk script requires it)
+mkdir -p usr/bin
+if [ -f bin/sed ]; then
+    cp bin/sed usr/bin/sed
+fi
+
+# Build ublksrv from git if needed (statically linked)
+if [ ! -f "${UBLKSRV_DIR}/ublk" ]; then
+    echo "Building ublksrv from git ..."
+    mkdir -p "${SCRIPT_DIR}"
+    cd "${SCRIPT_DIR}/"
+
+    if [ ! -d "ublksrv" ]; then
+        git clone https://github.com/ublk-org/ublksrv.git ublksrv
+    fi
+
+    cd ublksrv
+    git pull
+    autoreconf -i
+    # Static build for initrd - disable shared libs and enable static linking
+    ./configure --prefix=${ROOTFS_DIR}
+    make clean 2>/dev/null || true
+    make -j$(nproc)
+    make install
+fi
+
+# Copy ublksrv binary and its dependencies to rootfs
+if [ -f "${UBLKSRV_DIR}/ublk" ]; then
+    cd "${UBLKSRV_DIR}"
+    make install
+    # p=/bin/bash; cp -v --parents $p $(ldd $p | grep -o '/[^ ]*') /path/to/rootfs/
+    p=${ROOTFS_DIR}/sbin/ublk; cp -v --parents $p $(ldd $p | grep -o '/[^ ]*') ${ROOTFS_DIR}/
+fi
 
 cd "${ROOTFS_DIR}"
 
