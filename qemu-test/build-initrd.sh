@@ -9,6 +9,7 @@ INITRD_FILE="${SCRIPT_DIR}/initrd.img"
 BUSYBOX_VERSION="1.36.1"
 BUSYBOX_DIR="${SCRIPT_DIR}/busybox/busybox-${BUSYBOX_VERSION}"
 UBLKSRV_DIR="${SCRIPT_DIR}/ublksrv"
+EROFS_DIR="${SCRIPT_DIR}/erofs-utils"
 
 # Auto-detect kernel directory: use KERNEL_PATH env var, or detect relative to script
 KERNEL_PATH="${KERNEL_PATH:-${SCRIPT_DIR}/../..}"
@@ -71,6 +72,31 @@ cd "${ROOTFS_DIR}"
 mkdir -p usr/bin
 if [ -f bin/sed ]; then
     cp bin/sed usr/bin/sed
+fi
+
+# Build erofs-utils from git if needed
+if [ ! -f "${EROFS_DIR}/mkfs/mkfs.erofs" ]; then
+    echo "Building erofs-utils from git ..."
+    mkdir -p "${SCRIPT_DIR}"
+    cd "${SCRIPT_DIR}/"
+
+    if [ ! -d "erofs-utils" ]; then
+        git clone https://github.com/erofs/erofs-utils.git
+    fi
+
+    cd erofs-utils
+    git pull
+    autoreconf -i
+    ./configure --prefix=${ROOTFS_DIR}
+    make -j$(nproc)
+    make install
+fi
+
+# Copy mkfs.erofs binary and its dependencies to rootfs
+if [ -f "${EROFS_DIR}/mkfs/mkfs.erofs" ]; then
+    cd "${EROFS_DIR}"
+    make install
+    p=${EROFS_DIR}/mkfs/mkfs.erofs; cp -v --parents $p $(ldd $p | grep -o '/[^ ]*') ${ROOTFS_DIR}/
 fi
 
 # Build ublksrv from git if needed (statically linked)
@@ -141,10 +167,15 @@ copy_modules() {
 copy_modules crc64 crc64-rocksoft t10-pi nvme-core nvme
 
 # Virtio drivers
-copy_modules virtio virtio_ring virtio_blk virtio_pci
+copy_modules virtio_ring virtio virtio_pci_modern_dev virtio_pci_legacy_dev virtio_blk virtio_pci virtio_mmio
+
+copy_modules erofs
 
 # ublk driver
 copy_modules ublk_drv
+
+# cachecow driver
+copy_modules cachecow
 
 # Build and copy tests
 echo "Building tests..."

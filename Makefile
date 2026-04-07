@@ -7,14 +7,15 @@ KERNEL_IMAGE ?= $(KERNEL_PATH)/arch/arm64/boot/Image
 QEMU_TIMEOUT ?= 0
 AUTO_TEST ?= 1
 
-.PHONY: all help qemu qemu-kvm qemu-debug disk initrd qemu-test clean
+.PHONY: all help qemu qemu-kvm qemu-debug disk initrd qemu-test clean kernel
 
-all: help
+all: kernel
 
 help:
 	@echo "QEMU E2E Test Environment"
 	@echo ""
 	@echo "Available targets:"
+	@echo "  all           - Build kernel"
 	@echo "  qemu          - Start QEMU VM"
 	@echo "  qemu-kvm      - Start QEMU VM with KVM acceleration"
 	@echo "  qemu-debug    - Start QEMU with GDB stub"
@@ -84,3 +85,7 @@ initrd:
 
 clean:
 	rm -f $(QEMU_TEST_DIR)/disk.qcow2 $(QEMU_TEST_DIR)/initrd.img
+
+kernel:
+	@echo "Building kernel..."
+	cd $(KERNEL_PATH) && make -j$(nproc) O=$(BUILD_DIR)

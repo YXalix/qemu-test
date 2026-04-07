@@ -8,12 +8,21 @@ set(CMAKE_EXE_LINKER_FLAGS "-static")
 
 include_directories(src)
 
-# Template for adding tests:
-# add_executable(test-yourfeature
-#     src/main.c
-#     src/test_common.c
-#     src/test_yourfeature.c
-# )
-# set_target_properties(test-yourfeature PROPERTIES
-#     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
-# )
+# CACHECOW Tests
+add_executable(test-cachecow-basic
+    src/main.c
+    src/test_common.c
+    src/test_cachecow_basic.c
+)
+set_target_properties(test-cachecow-basic PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+add_executable(test-cachecow-mmap
+    src/main.c
+    src/test_common.c
+    src/test_cachecow_mmap.c
+)
+set_target_properties(test-cachecow-mmap PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)

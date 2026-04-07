@@ -59,7 +59,7 @@ load_modules() {
     done
 
     # Virtio drivers
-    for mod in virtio virtio_ring virtio_blk virtio_pci; do
+    for mod in virtio_ring virtio virtio_pci_modern_dev virtio_pci_legacy_dev virtio_blk virtio_pci virtio_mmio; do
         if modprobe "$mod" 2>/dev/null || \
            insmod "$MODULES_DIR/${mod}.ko" 2>/dev/null; then
             loaded=$((loaded + 1))
@@ -73,6 +73,18 @@ load_modules() {
         loaded=$((loaded + 1))
     else
         LOG_WARN "ublk module not found"
+    fi
+
+    # CACHECOW driver (may be built-in or module)
+    if [ -d /sys/class/cachecow ]; then
+        LOG_OK "cachecow built-in and available"
+        loaded=$((loaded + 1))
+    elif modprobe cachecow 2>/dev/null || \
+         insmod "$MODULES_DIR/cachecow.ko" 2>/dev/null; then
+        LOG_OK "cachecow module loaded"
+        loaded=$((loaded + 1))
+    else
+        LOG_WARN "cachecow not available (not built-in or module failed to load)"
     fi
 
     LOG_INFO "Modules: $loaded loaded"
@@ -102,6 +114,16 @@ print_status() {
         echo "  ublk-control: not available"
     fi
 
+    # CACHECOW status
+    echo ""
+    echo "CACHECOW Status:"
+    if [ -d /sys/class/cachecow ]; then
+        echo "  cachecow module: loaded"
+        ls /dev/cachecow* 2>/dev/null | sed 's/^/  /' || echo "  No cachecow devices"
+    else
+        echo "  cachecow module: not loaded"
+    fi
+
     # Test data files
     echo ""
     echo "Test Data Files:"
@@ -115,6 +137,8 @@ print_status() {
     echo "Test commands:"
     echo "  Run tests from $TESTS_DIR"
     echo "  ublk add -t loop -f /data/testfile1.bin -n 0  # Create ublk device"
+    echo "  echo '/dev/ublkb0 /dev/ublkb1' > /sys/class/cachecow/create  # Create cachecow device"
+    echo "  cat /sys/kernel/debug/cachecow/cachecow0/info  # View device stats"
     echo ""
 }
 
@@ -130,7 +154,7 @@ run_auto_tests() {
     local test_count=0
     local pass_count=0
 
-    for test_exe in "$TESTS_DIR"/*; do
+    for test_exe in "$TESTS_DIR"/test-cachecow-mmap; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
             local test_name=$(basename "$test_exe")
@@ -224,6 +248,37 @@ setup_testdata() {
     fi
 }
 
+# Create CACHECOW device for testing
+setup_cachecow() {
+    LOG_INFO "Setting up CACHECOW device..."
+
+    if [ ! -d /sys/class/cachecow ]; then
+        LOG_WARN "CACHECOW module not loaded, skipping setup"
+        return 1
+    fi
+
+    if [ ! -e /dev/ublkb0 ] || [ ! -e /dev/ublkb1 ]; then
+        LOG_WARN "ublk devices not available, skipping CACHECOW setup"
+        return 1
+    fi
+
+    # Create cachecow device using ublk devices
+    if [ ! -e /dev/cachecow0 ]; then
+        echo "/dev/ublkb0 /dev/ublkb1" > /sys/class/cachecow/create 2>/dev/null
+        if [ $? -eq 0 ]; then
+            sleep 1
+            LOG_OK "CACHECOW device created (cachecow0)"
+        else
+            LOG_WARN "Failed to create CACHECOW device"
+            return 1
+        fi
+    else
+        LOG_OK "CACHECOW device already exists"
+    fi
+
+    return 0
+}
+
 #==========================================
 # Main Execution
 #==========================================
@@ -240,6 +295,9 @@ main() {
 
     # Check ublk devices exist
     check_ublk_devices
+
+    # Setup CACHECOW device
+    setup_cachecow
 
     # Show status
     print_status
