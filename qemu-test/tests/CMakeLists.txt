@@ -39,6 +39,11 @@ add_executable(test-hugetlbfs-punch-hole
     src/test_common.c
 )
 
-set_target_properties(test-hugetlb test-hugetlb-stress test-hugetlb-simple test-hugetlb-race test-hugetlbfs-swapoff test-hugetlbfs-punch-hole PROPERTIES
+add_executable(test-hugetlb-oom-reclaim
+    src/test_hugetlb_oom_reclaim.c
+    src/test_common.c
+)
+
+set_target_properties(test-hugetlb test-hugetlb-stress test-hugetlb-simple test-hugetlb-race test-hugetlbfs-swapoff test-hugetlbfs-punch-hole test-hugetlb-oom-reclaim PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
