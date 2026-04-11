@@ -307,7 +307,7 @@ run_auto_tests() {
     local test_count=0
     local pass_count=0
 
-    for test_exe in "$TESTS_DIR"/test-hugetlb-stress; do
+    for test_exe in "$TESTS_DIR"/test-hugetlbfs-punch-hole; do
         if [ -f "$test_exe" ] && [ -x "$test_exe" ]; then
             test_count=$((test_count + 1))
             local test_name=$(basename "$test_exe")
@@ -343,6 +343,13 @@ run_auto_tests() {
     echo "Final HugePages Status:"
     grep "^Huge" /proc/meminfo
     free -h
+
+    # Check for reserve count issues
+    rsvd=$(grep "^HugePages_Rsvd" /proc/meminfo | awk '{print $2}')
+    if [ "$rsvd" != "0" ] && [ "$rsvd" != "" ]; then
+        LOG_WARN "HugePages_Rsvd is non-zero: $rsvd (may indicate reserve accounting issue)"
+    fi
+
     return $test_failed
 }
 

@@ -189,3 +189,20 @@ int trigger_swap_multi(void **addrs, int count)
     PASS("Swap trigger sent for %d pages", count);
     return 0;
 }
+
+int get_hugepages_resv(void)
+{
+    FILE *fp = fopen("/proc/meminfo", "r");
+    char line[256];
+    int rsvd = 0;
+
+    if (!fp) return -1;
+    while (fgets(line, sizeof(line), fp)) {
+        if (strncmp(line, "HugePages_Rsvd:", 15) == 0) {
+            sscanf(line, "HugePages_Rsvd: %d", &rsvd);
+            break;
+        }
+    }
+    fclose(fp);
+    return rsvd;
+}

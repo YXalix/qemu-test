@@ -31,6 +31,9 @@ int verify_pattern(void *addr, size_t len, unsigned char pattern);
 int trigger_swap(void *addr, size_t offset);
 int trigger_swap_multi(void **addrs, int count);
 
+/* Get HugePages_Rsvd count from /proc/meminfo */
+int get_hugepages_resv(void);
+
 /* Test functions */
 void test_etmem_config(void);
 void test_swap_interface(void);
